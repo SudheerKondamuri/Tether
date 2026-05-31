@@ -23,3 +23,28 @@ dependencies:
   bonsoir: ^5.1.0
 
   # HTTP server (file serving)
+  shelf: ^1.4.2
+  shelf_router: ^1.1.4
+
+  # QR codes
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^6.0.2
+
+  # Permissions (Android)
+  permission_handler: ^11.3.1
+
+  # Utilities
+  uuid: ^4.5.1
+  crypto: ^3.0.6
+  collection: ^1.19.0
+  intl: ^0.19.0
+
+  # Crypto for TLS cert generation (pure Dart)
+  pointycastle: ^3.9.1
+  asn1lib: ^1.5.8
+  pem: ^2.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
