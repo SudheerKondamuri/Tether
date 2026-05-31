@@ -1,0 +1,25 @@
+name: tether
+description: "Tether — Linux-Android ecosystem utility for developers"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # Database (SQLite via Drift)
+  drift: ^2.22.1
+  sqlite3_flutter_libs: ^0.5.0
+  path_provider: ^2.1.5
+  path: ^1.9.0
+
+  # Networking & Discovery
+  bonsoir: ^5.1.0
+
+  # HTTP server (file serving)
