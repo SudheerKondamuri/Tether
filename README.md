@@ -69,3 +69,74 @@ Packet Types:
 ## Tech Stack
 
 | Component | Technology |
+|---|---|
+| UI Framework | Flutter (Dart) |
+| Android Native | Kotlin plugins |
+| Linux Native | C++ plugins |
+| Database | SQLite via drift |
+| Networking | dart:io TCP sockets |
+| Discovery | bonsoir (mDNS) |
+| File Transfer | shelf HTTP server |
+| Encryption | TLS 1.3 (openssl/pointycastle) |
+| State Management | Riverpod |
+| QR Codes | qr_flutter + mobile_scanner |
+
+## Build
+
+```bash
+# Dependencies
+flutter pub get
+dart run build_runner build
+
+# Linux Desktop
+flutter build linux
+
+# Android
+flutter build apk
+
+# Development
+flutter run -d linux
+flutter run -d <android-device-id>
+```
+
+## Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| TCP Port | 5280 | Main protocol socket |
+| HTTP Port | 5281 | File transfer server |
+| mDNS Service | `_continuumlink._tcp` | Discovery broadcast |
+| Clipboard History | 15 items | Ring buffer max |
+| Heartbeat Interval | 5 seconds | Keep-alive frequency |
+| Reconnect Attempts | 10 | Auto-reconnect limit |
+
+## Pairing Flow
+
+1. Linux device displays QR code containing `{ip, port, pin, cert_fingerprint}`
+2. Android scans QR or enters 6-digit PIN manually
+3. TLS handshake validates certificate fingerprint
+4. Devices exchange HANDSHAKE packets with name/platform/version
+5. Paired device saved to SQLite for auto-reconnect
+
+## Cross-Platform Strategy
+
+The architecture is designed for future **Windows** and **macOS** support:
+- `PlatformUtils` abstracts all platform checks
+- `platformWidget()` routes to platform-specific shells
+- Pure Dart networking (no native dependencies for core protocol)
+- `bonsoir` handles mDNS across all platforms
+- TLS cert generation: openssl CLI (Linux/macOS) with pointycastle fallback (Android/Windows)
+
+## v2 Roadmap
+
+Features locked behind `V2LockedButton` widgets:
+- **SMS Gateway** — Read/send SMS from Linux
+- **Remote Shell** — Terminal access to Android
+- **Audio Routing** — Forward Android audio to Linux
+- **Hotspot Toggle** — Control Android hotspot from Linux
+- **Native Screen Stream** — MediaProjection + H.264 (no scrcpy)
+- **Touch Input Relay** — Control Android screen from Linux
+
+## License
+
+MIT
