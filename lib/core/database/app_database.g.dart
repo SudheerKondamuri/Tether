@@ -1577,5 +1577,1582 @@ class $NotificationHistoryTable extends NotificationHistory
   @override
   String get actualTableName => $name;
   static const String $name = 'notification_history';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<NotificationHistoryData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('app_name')) {
+      context.handle(
+        _appNameMeta,
+        appName.isAcceptableOrUnknown(data['app_name']!, _appNameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_appNameMeta);
+    }
+    if (data.containsKey('package_name')) {
+      context.handle(
+        _packageNameMeta,
+        packageName.isAcceptableOrUnknown(
+          data['package_name']!,
+          _packageNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_packageNameMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('body')) {
+      context.handle(
+        _bodyMeta,
+        body.isAcceptableOrUnknown(data['body']!, _bodyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bodyMeta);
+    }
+    if (data.containsKey('timestamp')) {
+      context.handle(
+        _timestampMeta,
+        timestamp.isAcceptableOrUnknown(data['timestamp']!, _timestampMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_timestampMeta);
+    }
+    if (data.containsKey('icon_b64')) {
+      context.handle(
+        _iconB64Meta,
+        iconB64.isAcceptableOrUnknown(data['icon_b64']!, _iconB64Meta),
+      );
+    }
+    if (data.containsKey('has_reply_action')) {
+      context.handle(
+        _hasReplyActionMeta,
+        hasReplyAction.isAcceptableOrUnknown(
+          data['has_reply_action']!,
+          _hasReplyActionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('notification_key')) {
+      context.handle(
+        _notificationKeyMeta,
+        notificationKey.isAcceptableOrUnknown(
+          data['notification_key']!,
+          _notificationKeyMeta,
+        ),
+      );
+    }
+    return context;
+  }
 
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  NotificationHistoryData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return NotificationHistoryData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      appName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}app_name'],
+      )!,
+      packageName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}package_name'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      body: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}body'],
+      )!,
+      timestamp: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}timestamp'],
+      )!,
+      iconB64: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon_b64'],
+      ),
+      hasReplyAction: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}has_reply_action'],
+      )!,
+      notificationKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}notification_key'],
+      ),
+    );
+  }
+
+  @override
+  $NotificationHistoryTable createAlias(String alias) {
+    return $NotificationHistoryTable(attachedDatabase, alias);
+  }
+}
+
+class NotificationHistoryData extends DataClass
+    implements Insertable<NotificationHistoryData> {
+  final int id;
+  final String appName;
+  final String packageName;
+  final String title;
+  final String body;
+  final DateTime timestamp;
+  final String? iconB64;
+  final bool hasReplyAction;
+  final String? notificationKey;
+  const NotificationHistoryData({
+    required this.id,
+    required this.appName,
+    required this.packageName,
+    required this.title,
+    required this.body,
+    required this.timestamp,
+    this.iconB64,
+    required this.hasReplyAction,
+    this.notificationKey,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['app_name'] = Variable<String>(appName);
+    map['package_name'] = Variable<String>(packageName);
+    map['title'] = Variable<String>(title);
+    map['body'] = Variable<String>(body);
+    map['timestamp'] = Variable<DateTime>(timestamp);
+    if (!nullToAbsent || iconB64 != null) {
+      map['icon_b64'] = Variable<String>(iconB64);
+    }
+    map['has_reply_action'] = Variable<bool>(hasReplyAction);
+    if (!nullToAbsent || notificationKey != null) {
+      map['notification_key'] = Variable<String>(notificationKey);
+    }
+    return map;
+  }
+
+  NotificationHistoryCompanion toCompanion(bool nullToAbsent) {
+    return NotificationHistoryCompanion(
+      id: Value(id),
+      appName: Value(appName),
+      packageName: Value(packageName),
+      title: Value(title),
+      body: Value(body),
+      timestamp: Value(timestamp),
+      iconB64: iconB64 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(iconB64),
+      hasReplyAction: Value(hasReplyAction),
+      notificationKey: notificationKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(notificationKey),
+    );
+  }
+
+  factory NotificationHistoryData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return NotificationHistoryData(
+      id: serializer.fromJson<int>(json['id']),
+      appName: serializer.fromJson<String>(json['appName']),
+      packageName: serializer.fromJson<String>(json['packageName']),
+      title: serializer.fromJson<String>(json['title']),
+      body: serializer.fromJson<String>(json['body']),
+      timestamp: serializer.fromJson<DateTime>(json['timestamp']),
+      iconB64: serializer.fromJson<String?>(json['iconB64']),
+      hasReplyAction: serializer.fromJson<bool>(json['hasReplyAction']),
+      notificationKey: serializer.fromJson<String?>(json['notificationKey']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'appName': serializer.toJson<String>(appName),
+      'packageName': serializer.toJson<String>(packageName),
+      'title': serializer.toJson<String>(title),
+      'body': serializer.toJson<String>(body),
+      'timestamp': serializer.toJson<DateTime>(timestamp),
+      'iconB64': serializer.toJson<String?>(iconB64),
+      'hasReplyAction': serializer.toJson<bool>(hasReplyAction),
+      'notificationKey': serializer.toJson<String?>(notificationKey),
+    };
+  }
+
+  NotificationHistoryData copyWith({
+    int? id,
+    String? appName,
+    String? packageName,
+    String? title,
+    String? body,
+    DateTime? timestamp,
+    Value<String?> iconB64 = const Value.absent(),
+    bool? hasReplyAction,
+    Value<String?> notificationKey = const Value.absent(),
+  }) => NotificationHistoryData(
+    id: id ?? this.id,
+    appName: appName ?? this.appName,
+    packageName: packageName ?? this.packageName,
+    title: title ?? this.title,
+    body: body ?? this.body,
+    timestamp: timestamp ?? this.timestamp,
+    iconB64: iconB64.present ? iconB64.value : this.iconB64,
+    hasReplyAction: hasReplyAction ?? this.hasReplyAction,
+    notificationKey: notificationKey.present
+        ? notificationKey.value
+        : this.notificationKey,
+  );
+  NotificationHistoryData copyWithCompanion(NotificationHistoryCompanion data) {
+    return NotificationHistoryData(
+      id: data.id.present ? data.id.value : this.id,
+      appName: data.appName.present ? data.appName.value : this.appName,
+      packageName: data.packageName.present
+          ? data.packageName.value
+          : this.packageName,
+      title: data.title.present ? data.title.value : this.title,
+      body: data.body.present ? data.body.value : this.body,
+      timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
+      iconB64: data.iconB64.present ? data.iconB64.value : this.iconB64,
+      hasReplyAction: data.hasReplyAction.present
+          ? data.hasReplyAction.value
+          : this.hasReplyAction,
+      notificationKey: data.notificationKey.present
+          ? data.notificationKey.value
+          : this.notificationKey,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('NotificationHistoryData(')
+          ..write('id: $id, ')
+          ..write('appName: $appName, ')
+          ..write('packageName: $packageName, ')
+          ..write('title: $title, ')
+          ..write('body: $body, ')
+          ..write('timestamp: $timestamp, ')
+          ..write('iconB64: $iconB64, ')
+          ..write('hasReplyAction: $hasReplyAction, ')
+          ..write('notificationKey: $notificationKey')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    appName,
+    packageName,
+    title,
+    body,
+    timestamp,
+    iconB64,
+    hasReplyAction,
+    notificationKey,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is NotificationHistoryData &&
+          other.id == this.id &&
+          other.appName == this.appName &&
+          other.packageName == this.packageName &&
+          other.title == this.title &&
+          other.body == this.body &&
+          other.timestamp == this.timestamp &&
+          other.iconB64 == this.iconB64 &&
+          other.hasReplyAction == this.hasReplyAction &&
+          other.notificationKey == this.notificationKey);
+}
+
+class NotificationHistoryCompanion
+    extends UpdateCompanion<NotificationHistoryData> {
+  final Value<int> id;
+  final Value<String> appName;
+  final Value<String> packageName;
+  final Value<String> title;
+  final Value<String> body;
+  final Value<DateTime> timestamp;
+  final Value<String?> iconB64;
+  final Value<bool> hasReplyAction;
+  final Value<String?> notificationKey;
+  const NotificationHistoryCompanion({
+    this.id = const Value.absent(),
+    this.appName = const Value.absent(),
+    this.packageName = const Value.absent(),
+    this.title = const Value.absent(),
+    this.body = const Value.absent(),
+    this.timestamp = const Value.absent(),
+    this.iconB64 = const Value.absent(),
+    this.hasReplyAction = const Value.absent(),
+    this.notificationKey = const Value.absent(),
+  });
+  NotificationHistoryCompanion.insert({
+    this.id = const Value.absent(),
+    required String appName,
+    required String packageName,
+    required String title,
+    required String body,
+    required DateTime timestamp,
+    this.iconB64 = const Value.absent(),
+    this.hasReplyAction = const Value.absent(),
+    this.notificationKey = const Value.absent(),
+  }) : appName = Value(appName),
+       packageName = Value(packageName),
+       title = Value(title),
+       body = Value(body),
+       timestamp = Value(timestamp);
+  static Insertable<NotificationHistoryData> custom({
+    Expression<int>? id,
+    Expression<String>? appName,
+    Expression<String>? packageName,
+    Expression<String>? title,
+    Expression<String>? body,
+    Expression<DateTime>? timestamp,
+    Expression<String>? iconB64,
+    Expression<bool>? hasReplyAction,
+    Expression<String>? notificationKey,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (appName != null) 'app_name': appName,
+      if (packageName != null) 'package_name': packageName,
+      if (title != null) 'title': title,
+      if (body != null) 'body': body,
+      if (timestamp != null) 'timestamp': timestamp,
+      if (iconB64 != null) 'icon_b64': iconB64,
+      if (hasReplyAction != null) 'has_reply_action': hasReplyAction,
+      if (notificationKey != null) 'notification_key': notificationKey,
+    });
+  }
+
+  NotificationHistoryCompanion copyWith({
+    Value<int>? id,
+    Value<String>? appName,
+    Value<String>? packageName,
+    Value<String>? title,
+    Value<String>? body,
+    Value<DateTime>? timestamp,
+    Value<String?>? iconB64,
+    Value<bool>? hasReplyAction,
+    Value<String?>? notificationKey,
+  }) {
+    return NotificationHistoryCompanion(
+      id: id ?? this.id,
+      appName: appName ?? this.appName,
+      packageName: packageName ?? this.packageName,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      timestamp: timestamp ?? this.timestamp,
+      iconB64: iconB64 ?? this.iconB64,
+      hasReplyAction: hasReplyAction ?? this.hasReplyAction,
+      notificationKey: notificationKey ?? this.notificationKey,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (appName.present) {
+      map['app_name'] = Variable<String>(appName.value);
+    }
+    if (packageName.present) {
+      map['package_name'] = Variable<String>(packageName.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (body.present) {
+      map['body'] = Variable<String>(body.value);
+    }
+    if (timestamp.present) {
+      map['timestamp'] = Variable<DateTime>(timestamp.value);
+    }
+    if (iconB64.present) {
+      map['icon_b64'] = Variable<String>(iconB64.value);
+    }
+    if (hasReplyAction.present) {
+      map['has_reply_action'] = Variable<bool>(hasReplyAction.value);
+    }
+    if (notificationKey.present) {
+      map['notification_key'] = Variable<String>(notificationKey.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('NotificationHistoryCompanion(')
+          ..write('id: $id, ')
+          ..write('appName: $appName, ')
+          ..write('packageName: $packageName, ')
+          ..write('title: $title, ')
+          ..write('body: $body, ')
+          ..write('timestamp: $timestamp, ')
+          ..write('iconB64: $iconB64, ')
+          ..write('hasReplyAction: $hasReplyAction, ')
+          ..write('notificationKey: $notificationKey')
+          ..write(')'))
+        .toString();
+  }
+}
+
+abstract class _$AppDatabase extends GeneratedDatabase {
+  _$AppDatabase(QueryExecutor e) : super(e);
+  $AppDatabaseManager get managers => $AppDatabaseManager(this);
+  late final $ClipboardEntriesTable clipboardEntries = $ClipboardEntriesTable(
+    this,
+  );
+  late final $PairedDevicesTable pairedDevices = $PairedDevicesTable(this);
+  late final $ManualDevicesTable manualDevices = $ManualDevicesTable(this);
+  late final $SettingsTable settings = $SettingsTable(this);
+  late final $NotificationHistoryTable notificationHistory =
+      $NotificationHistoryTable(this);
+  @override
+  Iterable<TableInfo<Table, Object?>> get allTables =>
+      allSchemaEntities.whereType<TableInfo<Table, Object?>>();
+  @override
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+    clipboardEntries,
+    pairedDevices,
+    manualDevices,
+    settings,
+    notificationHistory,
+  ];
+}
+
+typedef $$ClipboardEntriesTableCreateCompanionBuilder =
+    ClipboardEntriesCompanion Function({
+      Value<int> id,
+      required String content,
+      Value<String> dataType,
+      required String sourceDevice,
+      required DateTime timestamp,
+    });
+typedef $$ClipboardEntriesTableUpdateCompanionBuilder =
+    ClipboardEntriesCompanion Function({
+      Value<int> id,
+      Value<String> content,
+      Value<String> dataType,
+      Value<String> sourceDevice,
+      Value<DateTime> timestamp,
+    });
+
+class $$ClipboardEntriesTableFilterComposer
+    extends Composer<_$AppDatabase, $ClipboardEntriesTable> {
+  $$ClipboardEntriesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dataType => $composableBuilder(
+    column: $table.dataType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceDevice => $composableBuilder(
+    column: $table.sourceDevice,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get timestamp => $composableBuilder(
+    column: $table.timestamp,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ClipboardEntriesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ClipboardEntriesTable> {
+  $$ClipboardEntriesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dataType => $composableBuilder(
+    column: $table.dataType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceDevice => $composableBuilder(
+    column: $table.sourceDevice,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get timestamp => $composableBuilder(
+    column: $table.timestamp,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ClipboardEntriesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ClipboardEntriesTable> {
+  $$ClipboardEntriesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<String> get dataType =>
+      $composableBuilder(column: $table.dataType, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceDevice => $composableBuilder(
+    column: $table.sourceDevice,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get timestamp =>
+      $composableBuilder(column: $table.timestamp, builder: (column) => column);
+}
+
+class $$ClipboardEntriesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ClipboardEntriesTable,
+          ClipboardEntry,
+          $$ClipboardEntriesTableFilterComposer,
+          $$ClipboardEntriesTableOrderingComposer,
+          $$ClipboardEntriesTableAnnotationComposer,
+          $$ClipboardEntriesTableCreateCompanionBuilder,
+          $$ClipboardEntriesTableUpdateCompanionBuilder,
+          (
+            ClipboardEntry,
+            BaseReferences<
+              _$AppDatabase,
+              $ClipboardEntriesTable,
+              ClipboardEntry
+            >,
+          ),
+          ClipboardEntry,
+          PrefetchHooks Function()
+        > {
+  $$ClipboardEntriesTableTableManager(
+    _$AppDatabase db,
+    $ClipboardEntriesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ClipboardEntriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ClipboardEntriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ClipboardEntriesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<String> dataType = const Value.absent(),
+                Value<String> sourceDevice = const Value.absent(),
+                Value<DateTime> timestamp = const Value.absent(),
+              }) => ClipboardEntriesCompanion(
+                id: id,
+                content: content,
+                dataType: dataType,
+                sourceDevice: sourceDevice,
+                timestamp: timestamp,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String content,
+                Value<String> dataType = const Value.absent(),
+                required String sourceDevice,
+                required DateTime timestamp,
+              }) => ClipboardEntriesCompanion.insert(
+                id: id,
+                content: content,
+                dataType: dataType,
+                sourceDevice: sourceDevice,
+                timestamp: timestamp,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ClipboardEntriesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ClipboardEntriesTable,
+      ClipboardEntry,
+      $$ClipboardEntriesTableFilterComposer,
+      $$ClipboardEntriesTableOrderingComposer,
+      $$ClipboardEntriesTableAnnotationComposer,
+      $$ClipboardEntriesTableCreateCompanionBuilder,
+      $$ClipboardEntriesTableUpdateCompanionBuilder,
+      (
+        ClipboardEntry,
+        BaseReferences<_$AppDatabase, $ClipboardEntriesTable, ClipboardEntry>,
+      ),
+      ClipboardEntry,
+      PrefetchHooks Function()
+    >;
+typedef $$PairedDevicesTableCreateCompanionBuilder =
+    PairedDevicesCompanion Function({
+      Value<int> id,
+      required String deviceId,
+      required String name,
+      required String platform,
+      required String certPem,
+      required String certFingerprint,
+      Value<String?> lastIp,
+      Value<int?> lastPort,
+      required DateTime pairedAt,
+    });
+typedef $$PairedDevicesTableUpdateCompanionBuilder =
+    PairedDevicesCompanion Function({
+      Value<int> id,
+      Value<String> deviceId,
+      Value<String> name,
+      Value<String> platform,
+      Value<String> certPem,
+      Value<String> certFingerprint,
+      Value<String?> lastIp,
+      Value<int?> lastPort,
+      Value<DateTime> pairedAt,
+    });
+
+class $$PairedDevicesTableFilterComposer
+    extends Composer<_$AppDatabase, $PairedDevicesTable> {
+  $$PairedDevicesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get platform => $composableBuilder(
+    column: $table.platform,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get certPem => $composableBuilder(
+    column: $table.certPem,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get certFingerprint => $composableBuilder(
+    column: $table.certFingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastIp => $composableBuilder(
+    column: $table.lastIp,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastPort => $composableBuilder(
+    column: $table.lastPort,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get pairedAt => $composableBuilder(
+    column: $table.pairedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PairedDevicesTableOrderingComposer
+    extends Composer<_$AppDatabase, $PairedDevicesTable> {
+  $$PairedDevicesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get platform => $composableBuilder(
+    column: $table.platform,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get certPem => $composableBuilder(
+    column: $table.certPem,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get certFingerprint => $composableBuilder(
+    column: $table.certFingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastIp => $composableBuilder(
+    column: $table.lastIp,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastPort => $composableBuilder(
+    column: $table.lastPort,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get pairedAt => $composableBuilder(
+    column: $table.pairedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PairedDevicesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PairedDevicesTable> {
+  $$PairedDevicesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get platform =>
+      $composableBuilder(column: $table.platform, builder: (column) => column);
+
+  GeneratedColumn<String> get certPem =>
+      $composableBuilder(column: $table.certPem, builder: (column) => column);
+
+  GeneratedColumn<String> get certFingerprint => $composableBuilder(
+    column: $table.certFingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastIp =>
+      $composableBuilder(column: $table.lastIp, builder: (column) => column);
+
+  GeneratedColumn<int> get lastPort =>
+      $composableBuilder(column: $table.lastPort, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get pairedAt =>
+      $composableBuilder(column: $table.pairedAt, builder: (column) => column);
+}
+
+class $$PairedDevicesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PairedDevicesTable,
+          PairedDevice,
+          $$PairedDevicesTableFilterComposer,
+          $$PairedDevicesTableOrderingComposer,
+          $$PairedDevicesTableAnnotationComposer,
+          $$PairedDevicesTableCreateCompanionBuilder,
+          $$PairedDevicesTableUpdateCompanionBuilder,
+          (
+            PairedDevice,
+            BaseReferences<_$AppDatabase, $PairedDevicesTable, PairedDevice>,
+          ),
+          PairedDevice,
+          PrefetchHooks Function()
+        > {
+  $$PairedDevicesTableTableManager(_$AppDatabase db, $PairedDevicesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PairedDevicesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PairedDevicesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PairedDevicesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> platform = const Value.absent(),
+                Value<String> certPem = const Value.absent(),
+                Value<String> certFingerprint = const Value.absent(),
+                Value<String?> lastIp = const Value.absent(),
+                Value<int?> lastPort = const Value.absent(),
+                Value<DateTime> pairedAt = const Value.absent(),
+              }) => PairedDevicesCompanion(
+                id: id,
+                deviceId: deviceId,
+                name: name,
+                platform: platform,
+                certPem: certPem,
+                certFingerprint: certFingerprint,
+                lastIp: lastIp,
+                lastPort: lastPort,
+                pairedAt: pairedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String deviceId,
+                required String name,
+                required String platform,
+                required String certPem,
+                required String certFingerprint,
+                Value<String?> lastIp = const Value.absent(),
+                Value<int?> lastPort = const Value.absent(),
+                required DateTime pairedAt,
+              }) => PairedDevicesCompanion.insert(
+                id: id,
+                deviceId: deviceId,
+                name: name,
+                platform: platform,
+                certPem: certPem,
+                certFingerprint: certFingerprint,
+                lastIp: lastIp,
+                lastPort: lastPort,
+                pairedAt: pairedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PairedDevicesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PairedDevicesTable,
+      PairedDevice,
+      $$PairedDevicesTableFilterComposer,
+      $$PairedDevicesTableOrderingComposer,
+      $$PairedDevicesTableAnnotationComposer,
+      $$PairedDevicesTableCreateCompanionBuilder,
+      $$PairedDevicesTableUpdateCompanionBuilder,
+      (
+        PairedDevice,
+        BaseReferences<_$AppDatabase, $PairedDevicesTable, PairedDevice>,
+      ),
+      PairedDevice,
+      PrefetchHooks Function()
+    >;
+typedef $$ManualDevicesTableCreateCompanionBuilder =
+    ManualDevicesCompanion Function({
+      Value<int> id,
+      required String ip,
+      required int port,
+      Value<String> name,
+      required DateTime addedAt,
+    });
+typedef $$ManualDevicesTableUpdateCompanionBuilder =
+    ManualDevicesCompanion Function({
+      Value<int> id,
+      Value<String> ip,
+      Value<int> port,
+      Value<String> name,
+      Value<DateTime> addedAt,
+    });
+
+class $$ManualDevicesTableFilterComposer
+    extends Composer<_$AppDatabase, $ManualDevicesTable> {
+  $$ManualDevicesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ip => $composableBuilder(
+    column: $table.ip,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get port => $composableBuilder(
+    column: $table.port,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get addedAt => $composableBuilder(
+    column: $table.addedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ManualDevicesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ManualDevicesTable> {
+  $$ManualDevicesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ip => $composableBuilder(
+    column: $table.ip,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get port => $composableBuilder(
+    column: $table.port,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get addedAt => $composableBuilder(
+    column: $table.addedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ManualDevicesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ManualDevicesTable> {
+  $$ManualDevicesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get ip =>
+      $composableBuilder(column: $table.ip, builder: (column) => column);
+
+  GeneratedColumn<int> get port =>
+      $composableBuilder(column: $table.port, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get addedAt =>
+      $composableBuilder(column: $table.addedAt, builder: (column) => column);
+}
+
+class $$ManualDevicesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ManualDevicesTable,
+          ManualDevice,
+          $$ManualDevicesTableFilterComposer,
+          $$ManualDevicesTableOrderingComposer,
+          $$ManualDevicesTableAnnotationComposer,
+          $$ManualDevicesTableCreateCompanionBuilder,
+          $$ManualDevicesTableUpdateCompanionBuilder,
+          (
+            ManualDevice,
+            BaseReferences<_$AppDatabase, $ManualDevicesTable, ManualDevice>,
+          ),
+          ManualDevice,
+          PrefetchHooks Function()
+        > {
+  $$ManualDevicesTableTableManager(_$AppDatabase db, $ManualDevicesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ManualDevicesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ManualDevicesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ManualDevicesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> ip = const Value.absent(),
+                Value<int> port = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<DateTime> addedAt = const Value.absent(),
+              }) => ManualDevicesCompanion(
+                id: id,
+                ip: ip,
+                port: port,
+                name: name,
+                addedAt: addedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String ip,
+                required int port,
+                Value<String> name = const Value.absent(),
+                required DateTime addedAt,
+              }) => ManualDevicesCompanion.insert(
+                id: id,
+                ip: ip,
+                port: port,
+                name: name,
+                addedAt: addedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ManualDevicesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ManualDevicesTable,
+      ManualDevice,
+      $$ManualDevicesTableFilterComposer,
+      $$ManualDevicesTableOrderingComposer,
+      $$ManualDevicesTableAnnotationComposer,
+      $$ManualDevicesTableCreateCompanionBuilder,
+      $$ManualDevicesTableUpdateCompanionBuilder,
+      (
+        ManualDevice,
+        BaseReferences<_$AppDatabase, $ManualDevicesTable, ManualDevice>,
+      ),
+      ManualDevice,
+      PrefetchHooks Function()
+    >;
+typedef $$SettingsTableCreateCompanionBuilder =
+    SettingsCompanion Function({
+      required String key,
+      required String value,
+      Value<int> rowid,
+    });
+typedef $$SettingsTableUpdateCompanionBuilder =
+    SettingsCompanion Function({
+      Value<String> key,
+      Value<String> value,
+      Value<int> rowid,
+    });
+
+class $$SettingsTableFilterComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SettingsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SettingsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SettingsTable> {
+  $$SettingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+}
+
+class $$SettingsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SettingsTable,
+          Setting,
+          $$SettingsTableFilterComposer,
+          $$SettingsTableOrderingComposer,
+          $$SettingsTableAnnotationComposer,
+          $$SettingsTableCreateCompanionBuilder,
+          $$SettingsTableUpdateCompanionBuilder,
+          (Setting, BaseReferences<_$AppDatabase, $SettingsTable, Setting>),
+          Setting,
+          PrefetchHooks Function()
+        > {
+  $$SettingsTableTableManager(_$AppDatabase db, $SettingsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SettingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SettingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SettingsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> key = const Value.absent(),
+                Value<String> value = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SettingsCompanion(key: key, value: value, rowid: rowid),
+          createCompanionCallback:
+              ({
+                required String key,
+                required String value,
+                Value<int> rowid = const Value.absent(),
+              }) => SettingsCompanion.insert(
+                key: key,
+                value: value,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SettingsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SettingsTable,
+      Setting,
+      $$SettingsTableFilterComposer,
+      $$SettingsTableOrderingComposer,
+      $$SettingsTableAnnotationComposer,
+      $$SettingsTableCreateCompanionBuilder,
+      $$SettingsTableUpdateCompanionBuilder,
+      (Setting, BaseReferences<_$AppDatabase, $SettingsTable, Setting>),
+      Setting,
+      PrefetchHooks Function()
+    >;
+typedef $$NotificationHistoryTableCreateCompanionBuilder =
+    NotificationHistoryCompanion Function({
+      Value<int> id,
+      required String appName,
+      required String packageName,
+      required String title,
+      required String body,
+      required DateTime timestamp,
+      Value<String?> iconB64,
+      Value<bool> hasReplyAction,
+      Value<String?> notificationKey,
+    });
+typedef $$NotificationHistoryTableUpdateCompanionBuilder =
+    NotificationHistoryCompanion Function({
+      Value<int> id,
+      Value<String> appName,
+      Value<String> packageName,
+      Value<String> title,
+      Value<String> body,
+      Value<DateTime> timestamp,
+      Value<String?> iconB64,
+      Value<bool> hasReplyAction,
+      Value<String?> notificationKey,
+    });
+
+class $$NotificationHistoryTableFilterComposer
+    extends Composer<_$AppDatabase, $NotificationHistoryTable> {
+  $$NotificationHistoryTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get appName => $composableBuilder(
+    column: $table.appName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get packageName => $composableBuilder(
+    column: $table.packageName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get timestamp => $composableBuilder(
+    column: $table.timestamp,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get iconB64 => $composableBuilder(
+    column: $table.iconB64,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hasReplyAction => $composableBuilder(
+    column: $table.hasReplyAction,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get notificationKey => $composableBuilder(
+    column: $table.notificationKey,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$NotificationHistoryTableOrderingComposer
+    extends Composer<_$AppDatabase, $NotificationHistoryTable> {
+  $$NotificationHistoryTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get appName => $composableBuilder(
+    column: $table.appName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get packageName => $composableBuilder(
+    column: $table.packageName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get timestamp => $composableBuilder(
+    column: $table.timestamp,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get iconB64 => $composableBuilder(
+    column: $table.iconB64,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hasReplyAction => $composableBuilder(
+    column: $table.hasReplyAction,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get notificationKey => $composableBuilder(
+    column: $table.notificationKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$NotificationHistoryTableAnnotationComposer
+    extends Composer<_$AppDatabase, $NotificationHistoryTable> {
+  $$NotificationHistoryTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get appName =>
+      $composableBuilder(column: $table.appName, builder: (column) => column);
+
+  GeneratedColumn<String> get packageName => $composableBuilder(
+    column: $table.packageName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get timestamp =>
+      $composableBuilder(column: $table.timestamp, builder: (column) => column);
+
+  GeneratedColumn<String> get iconB64 =>
+      $composableBuilder(column: $table.iconB64, builder: (column) => column);
+
+  GeneratedColumn<bool> get hasReplyAction => $composableBuilder(
+    column: $table.hasReplyAction,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get notificationKey => $composableBuilder(
+    column: $table.notificationKey,
+    builder: (column) => column,
+  );
+}
+
+class $$NotificationHistoryTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $NotificationHistoryTable,
+          NotificationHistoryData,
+          $$NotificationHistoryTableFilterComposer,
+          $$NotificationHistoryTableOrderingComposer,
+          $$NotificationHistoryTableAnnotationComposer,
+          $$NotificationHistoryTableCreateCompanionBuilder,
+          $$NotificationHistoryTableUpdateCompanionBuilder,
+          (
+            NotificationHistoryData,
+            BaseReferences<
+              _$AppDatabase,
+              $NotificationHistoryTable,
+              NotificationHistoryData
+            >,
+          ),
+          NotificationHistoryData,
+          PrefetchHooks Function()
+        > {
+  $$NotificationHistoryTableTableManager(
+    _$AppDatabase db,
+    $NotificationHistoryTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$NotificationHistoryTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$NotificationHistoryTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$NotificationHistoryTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> appName = const Value.absent(),
+                Value<String> packageName = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> body = const Value.absent(),
+                Value<DateTime> timestamp = const Value.absent(),
+                Value<String?> iconB64 = const Value.absent(),
+                Value<bool> hasReplyAction = const Value.absent(),
+                Value<String?> notificationKey = const Value.absent(),
+              }) => NotificationHistoryCompanion(
+                id: id,
+                appName: appName,
+                packageName: packageName,
+                title: title,
+                body: body,
+                timestamp: timestamp,
+                iconB64: iconB64,
+                hasReplyAction: hasReplyAction,
+                notificationKey: notificationKey,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String appName,
+                required String packageName,
+                required String title,
+                required String body,
+                required DateTime timestamp,
+                Value<String?> iconB64 = const Value.absent(),
+                Value<bool> hasReplyAction = const Value.absent(),
+                Value<String?> notificationKey = const Value.absent(),
+              }) => NotificationHistoryCompanion.insert(
+                id: id,
+                appName: appName,
+                packageName: packageName,
+                title: title,
+                body: body,
+                timestamp: timestamp,
+                iconB64: iconB64,
+                hasReplyAction: hasReplyAction,
+                notificationKey: notificationKey,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$NotificationHistoryTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $NotificationHistoryTable,
+      NotificationHistoryData,
+      $$NotificationHistoryTableFilterComposer,
+      $$NotificationHistoryTableOrderingComposer,
+      $$NotificationHistoryTableAnnotationComposer,
+      $$NotificationHistoryTableCreateCompanionBuilder,
+      $$NotificationHistoryTableUpdateCompanionBuilder,
+      (
+        NotificationHistoryData,
+        BaseReferences<
+          _$AppDatabase,
+          $NotificationHistoryTable,
+          NotificationHistoryData
+        >,
+      ),
+      NotificationHistoryData,
+      PrefetchHooks Function()
+    >;
+
+class $AppDatabaseManager {
+  final _$AppDatabase _db;
+  $AppDatabaseManager(this._db);
+  $$ClipboardEntriesTableTableManager get clipboardEntries =>
+      $$ClipboardEntriesTableTableManager(_db, _db.clipboardEntries);
+  $$PairedDevicesTableTableManager get pairedDevices =>
+      $$PairedDevicesTableTableManager(_db, _db.pairedDevices);
+  $$ManualDevicesTableTableManager get manualDevices =>
+      $$ManualDevicesTableTableManager(_db, _db.manualDevices);
+  $$SettingsTableTableManager get settings =>
+      $$SettingsTableTableManager(_db, _db.settings);
+  $$NotificationHistoryTableTableManager get notificationHistory =>
+      $$NotificationHistoryTableTableManager(_db, _db.notificationHistory);
 }
