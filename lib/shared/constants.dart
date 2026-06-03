@@ -25,5 +25,30 @@ class TetherConstants {
   // ─── File Transfer ───
   static const int fileChunkSize = 1024 * 1024; // 1 MB
   static const int fileChunkThreshold = 5 * 1024 * 1024; // 5 MB
+  static const int maxFileTransferRetries = 3;
 
+  // ─── Method Channels ───
+  static const String clipboardChannel = 'com.tether/clipboard';
+  static const String notificationChannel = 'com.tether/notifications';
+  static const String adbChannel = 'com.tether/adb';
+  static const String foregroundServiceChannel = 'com.tether/foreground';
+
+  // ─── Pairing ───
+  static const double qrCodeSize = 240.0;
+  static const int pinLength = 6;
+  static const Duration pairingTimeout = Duration(minutes: 5);
+
+  // ─── QR Data Keys ───
+  static const String qrKeyIp = 'ip';
+  static const String qrKeyPort = 'port';
+  static const String qrKeyPin = 'pin';
+  static const String qrKeyFingerprint = 'fingerprint';
+
+  // ─── OTP Detection ───
+  static final RegExp otpRegex = RegExp(r'\b\d{4,8}\b');
+  static final RegExp urlRegex = RegExp(r'^https?://');
+  static final RegExp filePathRegex = RegExp(r'^(/|file://)');
+
+  // ─── Database ───
+  static const String databaseName = 'tether.db';
 }
