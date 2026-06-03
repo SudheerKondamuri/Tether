@@ -160,5 +160,166 @@ class HandshakePayload {
 }
 
 class HeartbeatPayload {
+  final int? battery;
+  final int? wifiStrength;
 
+  HeartbeatPayload({this.battery, this.wifiStrength});
+
+  Map<String, dynamic> toJson() => {
+        'battery': battery,
+        'wifi_strength': wifiStrength,
+      };
+
+  factory HeartbeatPayload.fromJson(Map<String, dynamic> json) {
+    return HeartbeatPayload(
+      battery: json['battery'] as int?,
+      wifiStrength: json['wifi_strength'] as int?,
+    );
+  }
+}
+
+class ClipboardPayload {
+  final String content;
+  final String dataType;
+
+  ClipboardPayload({required this.content, required this.dataType});
+
+  Map<String, dynamic> toJson() => {
+        'content': content,
+        'data_type': dataType,
+      };
+
+  factory ClipboardPayload.fromJson(Map<String, dynamic> json) {
+    return ClipboardPayload(
+      content: json['content'] as String,
+      dataType: json['data_type'] as String,
+    );
+  }
+}
+
+class NotificationPayload {
+  final String app;
+  final String package;
+  final String title;
+  final String text;
+  final String? iconB64;
+  final List<String> actions;
+
+  NotificationPayload({
+    required this.app,
+    required this.package,
+    required this.title,
+    required this.text,
+    this.iconB64,
+    this.actions = const [],
+  });
+
+  Map<String, dynamic> toJson() => {
+        'app': app,
+        'package': package,
+        'title': title,
+        'text': text,
+        'icon_b64': iconB64,
+        'actions': actions,
+      };
+
+  factory NotificationPayload.fromJson(Map<String, dynamic> json) {
+    return NotificationPayload(
+      app: json['app'] as String,
+      package: json['package'] as String,
+      title: json['title'] as String,
+      text: json['text'] as String,
+      iconB64: json['icon_b64'] as String?,
+      actions: (json['actions'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class NotificationReplyPayload {
+  final String notificationId;
+  final String replyText;
+
+  NotificationReplyPayload({
+    required this.notificationId,
+    required this.replyText,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'notification_id': notificationId,
+        'reply_text': replyText,
+      };
+
+  factory NotificationReplyPayload.fromJson(Map<String, dynamic> json) {
+    return NotificationReplyPayload(
+      notificationId: json['notification_id'] as String,
+      replyText: json['reply_text'] as String,
+    );
+  }
+}
+
+class FileChunkPayload {
+  final String transferId;
+  final int chunkIndex;
+  final int totalChunks;
+  final String filename;
+  final String dataB64;
+
+  FileChunkPayload({
+    required this.transferId,
+    required this.chunkIndex,
+    required this.totalChunks,
+    required this.filename,
+    required this.dataB64,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'transfer_id': transferId,
+        'chunk_index': chunkIndex,
+        'total_chunks': totalChunks,
+        'filename': filename,
+        'data_b64': dataB64,
+      };
+
+  factory FileChunkPayload.fromJson(Map<String, dynamic> json) {
+    return FileChunkPayload(
+      transferId: json['transfer_id'] as String,
+      chunkIndex: json['chunk_index'] as int,
+      totalChunks: json['total_chunks'] as int,
+      filename: json['filename'] as String,
+      dataB64: json['data_b64'] as String,
+    );
+  }
+}
+
+class FileEntry {
+  final String name;
+  final int size;
+  final bool isDir;
+  final int modified;
+
+  FileEntry({
+    required this.name,
+    required this.size,
+    required this.isDir,
+    required this.modified,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'size': size,
+        'is_dir': isDir,
+        'modified': modified,
+      };
+
+  factory FileEntry.fromJson(Map<String, dynamic> json) {
+    return FileEntry(
+      name: json['name'] as String,
+      size: json['size'] as int,
+      isDir: json['is_dir'] as bool,
+      modified: json['modified'] as int,
+    );
+  }
 }
