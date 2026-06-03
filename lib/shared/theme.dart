@@ -136,5 +136,142 @@ class TetherTheme {
           color: TetherColors.textPrimary,
         ),
       ),
-
-}}
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: TetherColors.accentPrimary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(TetherRadius.button),
+          ),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: TetherColors.textPrimary,
+          side: const BorderSide(color: TetherColors.borderSubtle),
+          elevation: 0,
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(TetherRadius.button),
+          ),
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: TetherColors.accentPrimary,
+          textStyle: const TextStyle(
+            fontFamily: _fontFamily,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: TetherColors.surfaceElevated,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TetherRadius.card),
+          borderSide: const BorderSide(color: TetherColors.borderSubtle),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TetherRadius.card),
+          borderSide: const BorderSide(color: TetherColors.borderSubtle),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TetherRadius.card),
+          borderSide: const BorderSide(color: TetherColors.borderStrong),
+        ),
+        hintStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 14,
+          color: TetherColors.textDisabled,
+        ),
+        labelStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 14,
+          color: TetherColors.textSecondary,
+        ),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: TetherColors.borderSubtle,
+        thickness: 1,
+        space: 0,
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: TetherColors.backgroundBase,
+        selectedItemColor: TetherColors.accentPrimary,
+        unselectedItemColor: TetherColors.textSecondary,
+        type: BottomNavigationBarType.fixed,
+        elevation: 0,
+        selectedLabelStyle: TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        thumbColor: WidgetStateProperty.all(TetherColors.borderSubtle),
+        radius: const Radius.circular(2),
+        thickness: WidgetStateProperty.all(4),
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: TetherColors.surfaceHigher,
+          borderRadius: BorderRadius.circular(TetherRadius.badge),
+          border: Border.all(color: TetherColors.borderSubtle),
+        ),
+        textStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 12,
+          color: TetherColors.textPrimary,
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: TetherColors.surfaceHigher,
+        contentTextStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 14,
+          color: TetherColors.textPrimary,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(TetherRadius.card),
+          side: const BorderSide(color: TetherColors.borderSubtle),
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: TetherColors.surfaceHigher,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(TetherRadius.modal),
+        ),
+        titleTextStyle: const TextStyle(
+          fontFamily: _fontFamily,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: TetherColors.textPrimary,
+        ),
+      ),
+    );
+  }
+}
