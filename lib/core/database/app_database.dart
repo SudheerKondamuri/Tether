@@ -89,5 +89,95 @@ class AppDatabase extends _$AppDatabase {
         .getSingleOrNull();
   }
 
+  Future<int> upsertPairedDevice(PairedDevicesCompanion device) {
+    return into(pairedDevices).insertOnConflictUpdate(device);
+  }
 
+  Future<int> deletePairedDevice(String deviceId) {
+    return (delete(pairedDevices)
+          ..where((t) => t.deviceId.equals(deviceId)))
+        .go();
+  }
+
+  // ─── Manual Devices Operations ───
+
+  Future<List<ManualDevice>> getManualDevices() {
+    return select(manualDevices).get();
+  }
+
+  Stream<List<ManualDevice>> watchManualDevices() {
+    return select(manualDevices).watch();
+  }
+
+  Future<int> insertManualDevice(ManualDevicesCompanion device) {
+    return into(manualDevices).insert(device);
+  }
+
+  Future<int> deleteManualDevice(int id) {
+    return (delete(manualDevices)..where((t) => t.id.equals(id))).go();
+  }
+
+  // ─── Settings Operations ───
+
+  Future<String?> getSetting(String key) async {
+    final result = await (select(settings)
+          ..where((t) => t.key.equals(key)))
+        .getSingleOrNull();
+    return result?.value;
+  }
+
+  Future<void> setSetting(String key, String value) {
+    return into(settings).insertOnConflictUpdate(
+      SettingsCompanion(
+        key: Value(key),
+        value: Value(value),
+      ),
+    );
+  }
+
+  Future<bool> getSettingBool(String key, {bool defaultValue = false}) async {
+    final val = await getSetting(key);
+    if (val == null) return defaultValue;
+    return val == 'true';
+  }
+
+  Future<void> setSettingBool(String key, bool value) {
+    return setSetting(key, value.toString());
+  }
+
+  // ─── Notification History Operations ───
+
+  Future<List<NotificationHistoryData>> getNotifications({int limit = 50}) {
+    return (select(notificationHistory)
+          ..orderBy([(t) => OrderingTerm.desc(t.timestamp)])
+          ..limit(limit))
+        .get();
+  }
+
+  Stream<List<NotificationHistoryData>> watchNotifications({int limit = 50}) {
+    return (select(notificationHistory)
+          ..orderBy([(t) => OrderingTerm.desc(t.timestamp)])
+          ..limit(limit))
+        .watch();
+  }
+
+  Future<int> insertNotification(NotificationHistoryCompanion notif) {
+    return into(notificationHistory).insert(notif);
+  }
+
+  Future<int> deleteNotification(int id) {
+    return (delete(notificationHistory)..where((t) => t.id.equals(id))).go();
+  }
+
+  Future<int> clearNotifications() {
+    return delete(notificationHistory).go();
+  }
+}
+
+LazyDatabase _openConnection() {
+  return LazyDatabase(() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, TetherConstants.databaseName));
+    return NativeDatabase.createInBackground(file);
+  });
 }
