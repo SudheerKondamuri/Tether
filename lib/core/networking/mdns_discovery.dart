@@ -99,5 +99,105 @@ class MdnsDiscovery {
   Future<void> startDiscovery() async {
     await stopDiscovery();
 
+    // ─── mDNS Discovery ───
+    try {
+      _discovery = BonsoirDiscovery(
+        type: TetherConstants.mdnsServiceType,
+      );
+      await _discovery!.ready;
 
-}}
+      _discovery!.eventStream!.listen((event) {
+        if (event.type == BonsoirDiscoveryEventType.discoveryServiceFound) {
+          event.service!.resolve(_discovery!.serviceResolver);
+        } else if (event.type ==
+            BonsoirDiscoveryEventType.discoveryServiceResolved) {
+          final resolved = event.service as ResolvedBonsoirService;
+          final device = DiscoveredDevice(
+            name: resolved.name,
+            ip: resolved.host ?? '',
+            port: resolved.port,
+          );
+          if (device.ip.isNotEmpty) {
+            _discovered.add(device);
+            _devicesController.add(_discovered.toList());
+          }
+        } else if (event.type ==
+            BonsoirDiscoveryEventType.discoveryServiceLost) {
+          _discovered.removeWhere(
+              (d) => d.name == event.service?.name);
+          _devicesController.add(_discovered.toList());
+        }
+      });
+
+      await _discovery!.start();
+    } catch (_) {}
+
+    // ─── UDP Broadcast Discovery ───
+    try {
+      _udpDiscoverySocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      _udpDiscoverySocket!.broadcastEnabled = true;
+
+      _udpPingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+        const ping = "TETHER_DISCOVER:ping";
+        _udpDiscoverySocket?.send(ping.codeUnits, InternetAddress("255.255.255.255"), 5281);
+      });
+
+      _udpDiscoverySocket!.listen((event) {
+        if (event == RawSocketEvent.read) {
+          final datagram = _udpDiscoverySocket!.receive();
+          if (datagram != null) {
+            final text = String.fromCharCodes(datagram.data);
+            if (text.startsWith("TETHER_REPLY:")) {
+              final parts = text.split(":");
+              if (parts.length >= 3) {
+                final name = parts[1];
+                final port = int.tryParse(parts[2]) ?? TetherConstants.tcpPort;
+                final device = DiscoveredDevice(
+                  name: name,
+                  ip: datagram.address.address,
+                  port: port,
+                );
+                _discovered.add(device);
+                _devicesController.add(_discovered.toList());
+              }
+            }
+          }
+        }
+      });
+    } catch (_) {}
+  }
+
+  /// Stop discovering.
+  Future<void> stopDiscovery() async {
+    await _discovery?.stop();
+    _discovery = null;
+
+    _udpPingTimer?.cancel();
+    _udpPingTimer = null;
+
+    _udpDiscoverySocket?.close();
+    _udpDiscoverySocket = null;
+
+    _discovered.clear();
+  }
+
+  /// Stop everything and clean up.
+  Future<void> dispose() async {
+    await stopBroadcast();
+    await stopDiscovery();
+    await _devicesController.close();
+  }
+}
+
+// ─── Riverpod Providers ───
+
+final mdnsDiscoveryProvider = Provider<MdnsDiscovery>((ref) {
+  final discovery = MdnsDiscovery();
+  ref.onDispose(() => discovery.dispose());
+  return discovery;
+});
+
+final discoveredDevicesProvider = StreamProvider<List<DiscoveredDevice>>((ref) {
+  final discovery = ref.watch(mdnsDiscoveryProvider);
+  return discovery.devicesStream;
+});
