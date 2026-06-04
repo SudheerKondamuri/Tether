@@ -109,5 +109,114 @@ class ConnectionManager {
           name: deviceName,
           platform: PlatformUtils.platformName,
           version: TetherConstants.appVersion,
+        ).toJson(),
+      ));
+    } else {
+      _updateState(TetherConnectionState.disconnected);
+    }
 
-}}}
+    return success;
+  }
+
+  void _handleServerPacket(Packet packet, SecureSocket socket) {
+    if (packet.type == PacketType.handshake) {
+      final hs = HandshakePayload.fromJson(packet.payload);
+      _peer = ConnectedDevice(
+        deviceId: packet.deviceId,
+        name: hs.name,
+        platform: hs.platform,
+        ip: socket.remoteAddress.address,
+        port: socket.remotePort,
+      );
+      _peerController.add(_peer);
+      _updateState(TetherConnectionState.connected);
+
+      // Send our handshake back
+      _server.broadcast(Packet(
+        type: PacketType.handshake,
+        deviceId: deviceId,
+        payload: HandshakePayload(
+          name: deviceName,
+          platform: PlatformUtils.platformName,
+          version: TetherConstants.appVersion,
+        ).toJson(),
+      ));
+    } else if (packet.type == PacketType.heartbeat) {
+      final hb = HeartbeatPayload.fromJson(packet.payload);
+      if (_peer != null) {
+        _peer!.battery = hb.battery;
+        _peer!.wifiStrength = hb.wifiStrength;
+        _peer!.lastSeen = DateTime.now();
+        _peerController.add(_peer);
+      }
+    }
+
+    _packetController.add(packet);
+  }
+
+  void _handleClientPacket(Packet packet) {
+    if (packet.type == PacketType.handshake) {
+      final hs = HandshakePayload.fromJson(packet.payload);
+      _peer = ConnectedDevice(
+        deviceId: packet.deviceId,
+        name: hs.name,
+        platform: hs.platform,
+        ip: _client.host ?? '',
+        port: _client.port ?? TetherConstants.tcpPort,
+      );
+      _peerController.add(_peer);
+      _updateState(TetherConnectionState.connected);
+    } else if (packet.type == PacketType.heartbeat) {
+      final hb = HeartbeatPayload.fromJson(packet.payload);
+      if (_peer != null) {
+        _peer!.battery = hb.battery;
+        _peer!.wifiStrength = hb.wifiStrength;
+        _peer!.lastSeen = DateTime.now();
+        _peerController.add(_peer);
+      }
+    }
+
+    _packetController.add(packet);
+  }
+
+  /// Send a packet to the connected peer.
+  void sendPacket(Packet packet) {
+    if (_client.isConnected) {
+      _client.send(packet);
+    } else if (_server.isRunning) {
+      _server.broadcast(packet);
+    }
+  }
+
+  void _updateState(TetherConnectionState newState) {
+    _state = newState;
+    _stateController.add(newState);
+  }
+
+  /// Disconnect and stop everything.
+  Future<void> dispose() async {
+    await _client.disconnect();
+    await _server.stop();
+    await _stateController.close();
+    await _peerController.close();
+    await _packetController.close();
+  }
+}
+
+// ─── Riverpod Providers ───
+
+final connectionManagerProvider = Provider<ConnectionManager>((ref) {
+  final manager = ConnectionManager();
+  ref.onDispose(() => manager.dispose());
+  return manager;
+});
+
+final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
+  final manager = ref.watch(connectionManagerProvider);
+  return manager.stateStream;
+});
+
+final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
+  final manager = ref.watch(connectionManagerProvider);
+  return manager.peerStream;
+});
