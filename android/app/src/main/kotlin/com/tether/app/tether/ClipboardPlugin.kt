@@ -33,5 +33,38 @@ class ClipboardPlugin(private val context: Context) {
             when (call.method) {
                 "startListening" -> {
                     clipboardManager.addPrimaryClipChangedListener(clipListener)
+                    result.success(true)
+                }
+                "stopListening" -> {
+                    clipboardManager.removePrimaryClipChangedListener(clipListener)
+                    result.success(true)
+                }
+                "getClipboard" -> {
+                    val clip = clipboardManager.primaryClip
+                    if (clip != null && clip.itemCount > 0) {
+                        result.success(clip.getItemAt(0).coerceToText(context).toString())
+                    } else {
+                        result.success(null)
+                    }
+                }
+                "setClipboard" -> {
+                    val text = call.argument<String>("text")
+                    if (text != null) {
+                        val clip = android.content.ClipData.newPlainText("tether", text)
+                        clipboardManager.setPrimaryClip(clip)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID", "Text is null", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
 
-}}}}}
+    fun unregister() {
+        clipboardManager.removePrimaryClipChangedListener(clipListener)
+        channel?.setMethodCallHandler(null)
+        channel = null
+    }
+}
