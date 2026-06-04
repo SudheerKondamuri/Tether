@@ -122,5 +122,128 @@ class ClipboardService {
 
     // Save to database
     await _db.insertClipboardEntry(ClipboardEntriesCompanion(
+      content: Value(trimmed),
+      dataType: Value(type.name),
+      sourceDevice: Value('local'),
+      timestamp: Value(DateTime.now()),
+    ));
+  }
 
-}}
+  /// Handle incoming clipboard update from peer.
+  void _handleIncomingClipboard(Packet packet) {
+    final payload = packet.payload;
+    final text = payload['content'] as String? ?? '';
+    if (text.isEmpty) return;
+
+    final type = _detectType(text);
+    final source = payload['source'] as String? ?? 'remote';
+
+    final entry = ClipEntry(
+      content: text,
+      type: type,
+      source: source,
+    );
+
+    _addToHistory(entry);
+
+    // Update the local clipboard
+    _lastClipboard = text;
+    if (Platform.isAndroid) {
+      _channel.invokeMethod('setClipboard', {'text': text});
+    } else {
+      Clipboard.setData(ClipboardData(text: text));
+    }
+
+    // Save to database
+    _db.insertClipboardEntry(ClipboardEntriesCompanion(
+      content: Value(text),
+      dataType: Value(type.name),
+      sourceDevice: Value(source),
+      timestamp: Value(DateTime.now()),
+    ));
+  }
+
+  /// Send clipboard content to the connected peer.
+  void _syncToPeer(ClipEntry entry) {
+    if (!_connectionManager.isConnected) return;
+
+    _connectionManager.sendPacket(Packet(
+      type: PacketType.clipboardUpdate,
+      deviceId: _connectionManager.deviceId,
+      payload: {
+        'content': entry.content,
+        'type': entry.type.name,
+        'source': entry.source,
+      },
+    ));
+  }
+
+  /// Add an entry to the in-memory history ring buffer.
+  void _addToHistory(ClipEntry entry) {
+    _history.insert(0, entry);
+    if (_history.length > TetherConstants.clipboardMaxHistory) {
+      _history.removeLast();
+    }
+    _historyController.add(List.unmodifiable(_history));
+  }
+
+  /// Detect the type of clipboard content.
+  ClipType _detectType(String text) {
+    if (TetherConstants.otpRegex.hasMatch(text) && text.length <= 8) {
+      return ClipType.otp;
+    }
+    if (TetherConstants.urlRegex.hasMatch(text)) {
+      return ClipType.url;
+    }
+    if (TetherConstants.filePathRegex.hasMatch(text)) {
+      return ClipType.filePath;
+    }
+    // Simple code detection: contains common code patterns
+    if (text.contains('{') && text.contains('}') ||
+        text.contains('function') ||
+        text.contains('class ') ||
+        text.contains('import ')) {
+      return ClipType.code;
+    }
+    return ClipType.text;
+  }
+
+  /// Copy a history entry back to the system clipboard.
+  Future<void> copyToClipboard(ClipEntry entry) async {
+    _lastClipboard = entry.content;
+    if (Platform.isAndroid) {
+      await _channel.invokeMethod('setClipboard', {'text': entry.content});
+    } else {
+      await Clipboard.setData(ClipboardData(text: entry.content));
+    }
+  }
+
+  /// Clear all history.
+  void clearHistory() {
+    _history.clear();
+    _historyController.add([]);
+  }
+
+  void dispose() {
+    stop();
+    _historyController.close();
+  }
+}
+
+// ─── Riverpod Providers ───
+
+final clipboardServiceProvider = Provider<ClipboardService>((ref) {
+  final connManager = ref.watch(connectionManagerProvider);
+  final db = ref.watch(databaseProvider);
+  final service = ClipboardService(
+    connectionManager: connManager,
+    db: db,
+  );
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+final clipboardHistoryProvider = StreamProvider<List<ClipEntry>>((ref) {
+  final service = ref.watch(clipboardServiceProvider);
+  return service.historyStream;
+});
