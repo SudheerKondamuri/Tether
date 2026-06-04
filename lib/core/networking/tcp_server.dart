@@ -60,5 +60,66 @@ class TcpServer {
         if (codec == null) return;
 
         final packets = codec.decode(data);
+        for (final packet in packets) {
+          if (packet.type == PacketType.heartbeat) {
+            _resetHeartbeatTimer(remoteId);
+          }
+          onPacket?.call(packet, socket);
+        }
+      },
+      onError: (e) {
+        _removeClient(remoteId);
+      },
+      onDone: () {
+        _removeClient(remoteId);
+      },
+    );
+  }
 
-}}}
+  void _startHeartbeatMonitor(String remoteId) {
+    _heartbeatTimers[remoteId]?.cancel();
+    _heartbeatTimers[remoteId] = Timer(
+      TetherConstants.heartbeatTimeout,
+      () => _removeClient(remoteId),
+    );
+  }
+
+  void _resetHeartbeatTimer(String remoteId) {
+    _startHeartbeatMonitor(remoteId);
+  }
+
+  void _removeClient(String remoteId) {
+    final socket = _clients.remove(remoteId);
+    _codecs.remove(remoteId);
+    _heartbeatTimers.remove(remoteId)?.cancel();
+    if (socket != null) {
+      onDisconnect?.call(socket);
+      socket.destroy();
+    }
+  }
+
+  /// Send a packet to a specific client.
+  void sendTo(String remoteId, Packet packet) {
+    final socket = _clients[remoteId];
+    if (socket != null) {
+      socket.add(packet.encode());
+    }
+  }
+
+  /// Broadcast a packet to all connected clients.
+  void broadcast(Packet packet) {
+    final encoded = packet.encode();
+    for (final socket in _clients.values) {
+      socket.add(encoded);
+    }
+  }
+
+  /// Stop the server and disconnect all clients.
+  Future<void> stop() async {
+    for (final remoteId in _clients.keys.toList()) {
+      _removeClient(remoteId);
+    }
+    await _server?.close();
+    _server = null;
+  }
+}
