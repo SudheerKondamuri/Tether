@@ -73,5 +73,78 @@ class TcpClient {
       onConnectionChanged?.call(true);
       return true;
     } catch (e) {
+      _handleDisconnect();
+      return false;
+    }
+  }
 
-}}}
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(
+      TetherConstants.heartbeatInterval,
+      (_) {
+        send(Packet(
+          type: PacketType.heartbeat,
+          deviceId: _deviceId,
+          payload: HeartbeatPayload().toJson(),
+        ));
+      },
+    );
+  }
+
+  void _handleDisconnect() {
+    _heartbeatTimer?.cancel();
+    _socket?.destroy();
+    _socket = null;
+    _codec.reset();
+    onConnectionChanged?.call(false);
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (_host == null || _port == null) return;
+    if (_reconnectAttempts >= TetherConstants.maxReconnectAttempts) return;
+
+    _reconnectAttempts++;
+    final delay = Duration(
+      seconds: TetherConstants.reconnectDelay.inSeconds * _reconnectAttempts,
+    );
+
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(delay, () {
+      if (_host != null && _port != null) {
+        connect(
+          host: _host!,
+          port: _port!,
+          deviceId: _deviceId,
+          trustedCertPem: _trustedCertPem,
+        );
+      }
+    });
+  }
+
+  /// Send a packet to the connected peer.
+  void send(Packet packet) {
+    _socket?.add(packet.encode());
+  }
+
+  /// Gracefully disconnect.
+  Future<void> disconnect() async {
+    _reconnectTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _reconnectAttempts = TetherConstants.maxReconnectAttempts; // prevent reconnect
+
+    if (_socket != null) {
+      send(Packet(
+        type: PacketType.disconnect,
+        deviceId: _deviceId,
+        payload: {'reason': 'user_initiated'},
+      ));
+      await _socket!.flush();
+      _socket!.destroy();
+      _socket = null;
+    }
+
+    onConnectionChanged?.call(false);
+  }
+}
