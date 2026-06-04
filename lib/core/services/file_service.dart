@@ -98,4 +98,101 @@ class FileService {
     }
   }
 
+  /// Download a file from the remote peer's file server.
+  Future<void> downloadFile(String remoteRelativePath, String localDestPath) async {
+    final peer = _connectionManager.peer;
+    if (peer == null) throw Exception('No peer connected');
+
+    final client = HttpClient();
+    try {
+      final uri = Uri.parse('http://${peer.ip}:${TetherConstants.httpFilePort}/api/download/$remoteRelativePath');
+      final request = await client.getUrl(uri);
+      final response = await request.close();
+
+      if (response.statusCode != 200) {
+        throw Exception('Server returned status ${response.statusCode}');
+      }
+
+      final contentLength = response.contentLength;
+      final file = File(localDestPath);
+      final sink = file.openWrite();
+
+      int bytesReceived = 0;
+      _transferProgressController.add(0.0);
+
+      await response.forEach((chunk) {
+        sink.add(chunk);
+        bytesReceived += chunk.length;
+        if (contentLength > 0) {
+          _transferProgressController.add(bytesReceived / contentLength);
+        }
+      });
+
+      await sink.close();
+      _transferProgressController.add(1.0);
+    } catch (e) {
+      _transferProgressController.add(-1.0);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Upload a file to the remote peer's file server.
+  Future<void> uploadFile(File localFile) async {
+    final peer = _connectionManager.peer;
+    if (peer == null) throw Exception('No peer connected');
+
+    final filename = p.basename(localFile.path);
+    final size = await localFile.length();
+
+    final client = HttpClient();
+    try {
+      final uri = Uri.parse('http://${peer.ip}:${TetherConstants.httpFilePort}/api/upload');
+      final request = await client.postUrl(uri);
+      
+      request.headers.set('X-Filename', filename);
+      request.contentLength = size;
+
+      int bytesSent = 0;
+      _transferProgressController.add(0.0);
+
+      final fileStream = localFile.openRead();
+      final requestSink = request;
+
+      await for (final chunk in fileStream) {
+        requestSink.add(chunk);
+        bytesSent += chunk.length;
+        if (size > 0) {
+          _transferProgressController.add(bytesSent / size);
+        }
+      }
+
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        throw Exception('Server returned status ${response.statusCode}');
+      }
+
+      _transferProgressController.add(1.0);
+    } catch (e) {
+      _transferProgressController.add(-1.0);
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  void dispose() {
+    stop();
+    _transferProgressController.close();
+  }
 }
+
+// ─── Riverpod Providers ───
+
+final fileServiceProvider = Provider<FileService>((ref) {
+  final connManager = ref.watch(connectionManagerProvider);
+  final service = FileService(connectionManager: connManager);
+  ref.onDispose(() => service.dispose());
+  return service;
+});
