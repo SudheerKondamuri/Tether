@@ -105,5 +105,110 @@ class NotificationBridgeService {
     try {
       await _channel.invokeMethod('requestPermission');
     } catch (_) {}
+  }
 
-}}
+  /// Start listening to native notifications on Android.
+  Future<void> startListening() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('startListening');
+    } catch (_) {}
+  }
+
+  /// Stop listening to native notifications on Android.
+  Future<void> stopListening() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('stopListening');
+    } catch (_) {}
+  }
+
+  void _sendNotificationToPeer(dynamic arguments) {
+    if (!_connectionManager.isConnected) return;
+    try {
+      final data = Map<String, dynamic>.from(arguments as Map);
+      _connectionManager.sendPacket(Packet(
+        type: PacketType.notification,
+        deviceId: _connectionManager.deviceId,
+        payload: data,
+      ));
+    } catch (_) {}
+  }
+
+  void _handleNotification(Packet packet) {
+    final payload = packet.payload;
+    final notif = TetherNotification(
+      appName: payload['app_name'] as String? ?? 'Unknown',
+      title: payload['title'] as String? ?? '',
+      body: payload['body'] as String? ?? '',
+      iconBase64: payload['icon'] as String?,
+    );
+
+    _notifications.insert(0, notif);
+
+    // Keep max 100 in memory
+    if (_notifications.length > 100) {
+      _notifications.removeLast();
+    }
+
+    _notifController.add(List.unmodifiable(_notifications));
+
+    // Persist to SQLite
+    _db.insertNotification(NotificationHistoryCompanion(
+      appName: Value(notif.appName),
+      packageName: Value(payload['package'] as String? ?? notif.appName),
+      title: Value(notif.title),
+      body: Value(notif.body),
+      iconB64: Value(notif.iconBase64),
+      timestamp: Value(notif.timestamp),
+    ));
+  }
+
+  /// Mark a notification as read.
+  void markRead(int index) {
+    if (index < 0 || index >= _notifications.length) return;
+    final old = _notifications[index];
+    _notifications[index] = TetherNotification(
+      id: old.id,
+      appName: old.appName,
+      title: old.title,
+      body: old.body,
+      iconBase64: old.iconBase64,
+      timestamp: old.timestamp,
+      isRead: true,
+    );
+    _notifController.add(List.unmodifiable(_notifications));
+  }
+
+  /// Clear all notifications.
+  void clearAll() {
+    _notifications.clear();
+    _notifController.add([]);
+    _db.clearNotifications();
+  }
+
+  void dispose() {
+    stop();
+    _notifController.close();
+  }
+}
+
+
+// ─── Riverpod Providers ───
+
+final notificationBridgeProvider = Provider<NotificationBridgeService>((ref) {
+  final connManager = ref.watch(connectionManagerProvider);
+  final db = ref.watch(databaseProvider);
+  final service = NotificationBridgeService(
+    connectionManager: connManager,
+    db: db,
+  );
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+final notificationsProvider =
+    StreamProvider<List<TetherNotification>>((ref) {
+  final service = ref.watch(notificationBridgeProvider);
+  return service.notificationStream;
+});
