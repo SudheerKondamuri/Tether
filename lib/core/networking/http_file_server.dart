@@ -89,5 +89,94 @@ class HttpFileServer {
 
     return Response.ok(
       jsonEncode({
+        'path': path,
+        'files': entries,
+      }),
+      headers: {'Content-Type': 'application/json'},
+    );
+  }
 
-}}}
+  /// Download a file.
+  Future<Response> _downloadFile(Request request) async {
+    if (_sharedDirectory == null) {
+      return Response.notFound(jsonEncode({'error': 'No shared directory'}));
+    }
+
+    final path = request.params['path'] ?? '';
+    final fullPath = p.join(_sharedDirectory!, path);
+
+    // Security: prevent path traversal
+    final canonical = p.canonicalize(fullPath);
+    if (!canonical.startsWith(p.canonicalize(_sharedDirectory!))) {
+      return Response.forbidden(jsonEncode({'error': 'Access denied'}));
+    }
+
+    final file = File(fullPath);
+    if (!await file.exists()) {
+      return Response.notFound(jsonEncode({'error': 'File not found'}));
+    }
+
+    final stat = await file.stat();
+    return Response.ok(
+      file.openRead(),
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition':
+            'attachment; filename="${p.basename(fullPath)}"',
+        'Content-Length': '${stat.size}',
+      },
+    );
+  }
+
+  /// Upload a file.
+  Future<Response> _uploadFile(Request request) async {
+    if (_sharedDirectory == null) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': 'No shared directory'}),
+      );
+    }
+
+    // Simple upload: read body and write to file
+    // The filename comes from the X-Filename header
+    final filename = request.headers['x-filename'] ?? 'unnamed';
+    final destPath = p.join(_sharedDirectory!, filename);
+
+    // Security: prevent path traversal
+    final canonical = p.canonicalize(destPath);
+    if (!canonical.startsWith(p.canonicalize(_sharedDirectory!))) {
+      return Response.forbidden(jsonEncode({'error': 'Access denied'}));
+    }
+
+    final bytes = await request.read().toList();
+    final allBytes = bytes.expand((b) => b).toList();
+    await File(destPath).writeAsBytes(allBytes);
+
+    return Response.ok(
+      jsonEncode({
+        'status': 'ok',
+        'filename': filename,
+        'size': allBytes.length,
+      }),
+      headers: {'Content-Type': 'application/json'},
+    );
+  }
+
+  /// CORS middleware for local development.
+  Middleware _corsMiddleware() {
+    return (Handler handler) {
+      return (Request request) async {
+        if (request.method == 'OPTIONS') {
+          return Response.ok('', headers: _corsHeaders);
+        }
+        final response = await handler(request);
+        return response.change(headers: _corsHeaders);
+      };
+    };
+  }
+
+  static const _corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Filename',
+  };
+}
