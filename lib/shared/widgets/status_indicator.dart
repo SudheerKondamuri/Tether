@@ -66,5 +66,71 @@ class _StatusIndicatorState extends State<StatusIndicator>
     switch (widget.status) {
       case ConnectionStatus.connected:
         return TetherColors.accentSecondary;
+      case ConnectionStatus.disconnected:
+        return TetherColors.textDisabled;
+      case ConnectionStatus.searching:
+        return TetherColors.accentPrimary;
+    }
+  }
 
-}}}
+  String get _label {
+    switch (widget.status) {
+      case ConnectionStatus.connected:
+        return 'Connected';
+      case ConnectionStatus.disconnected:
+        return 'Disconnected';
+      case ConnectionStatus.searching:
+        return 'Searching...';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedBuilder(
+          animation: _pulseAnimation,
+          builder: (context, child) {
+            final scale = widget.status == ConnectionStatus.disconnected
+                ? 1.0
+                : _pulseAnimation.value;
+            return Container(
+              width: widget.size * scale,
+              height: widget.size * scale,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _dotColor,
+                boxShadow: widget.status == ConnectionStatus.connected
+                    ? [
+                        BoxShadow(
+                          color: _dotColor.withAlpha(80),
+                          blurRadius: widget.size * 0.8 * scale,
+                          spreadRadius: widget.size * 0.2 * (scale - 1),
+                        ),
+                      ]
+                    : null,
+              ),
+            );
+          },
+        ),
+        if (widget.showLabel) ...[
+          SizedBox(width: TetherSpacing.sm),
+          Flexible(
+            child: Text(
+              _label,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: _dotColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
