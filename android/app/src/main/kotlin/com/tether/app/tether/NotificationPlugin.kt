@@ -67,5 +67,72 @@ class NotificationPlugin : NotificationListenerService() {
             return flat != null && flat.contains(cn.flattenToString())
         }
 
+        private fun drawableToBitmap(drawable: Drawable): Bitmap {
+            if (drawable is BitmapDrawable) return drawable.bitmap
+            val bmp = Bitmap.createBitmap(
+                drawable.intrinsicWidth.coerceAtLeast(1),
+                drawable.intrinsicHeight.coerceAtLeast(1),
+                Bitmap.Config.ARGB_8888
+            )
+            val canvas = Canvas(bmp)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            return bmp
+        }
 
-}}
+        private fun bitmapToBase64(bitmap: Bitmap, maxSize: Int = 64): String {
+            val scaled = Bitmap.createScaledBitmap(bitmap, maxSize, maxSize, true)
+            val stream = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.PNG, 80, stream)
+            return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+        }
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (!isListening) return
+
+        val notification = sbn.notification ?: return
+        val extras = notification.extras ?: return
+        val appName = try {
+            val pm = applicationContext.packageManager
+            pm.getApplicationLabel(
+                pm.getApplicationInfo(sbn.packageName, 0)
+            ).toString()
+        } catch (_: Exception) {
+            sbn.packageName
+        }
+
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
+        val body = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+
+        if (title.isEmpty() && body.isEmpty()) return
+
+        // Get app icon as base64
+        val iconBase64 = try {
+            val pm = applicationContext.packageManager
+            val icon = pm.getApplicationIcon(sbn.packageName)
+            bitmapToBase64(drawableToBitmap(icon))
+        } catch (_: Exception) {
+            null
+        }
+
+        val data = mapOf(
+            "app_name" to appName,
+            "package" to sbn.packageName,
+            "title" to title,
+            "body" to body,
+            "icon" to iconBase64,
+            "timestamp" to sbn.postTime,
+        )
+
+        channel?.invokeMethod("onNotificationPosted", data)
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (!isListening) return
+        channel?.invokeMethod("onNotificationRemoved", mapOf(
+            "package" to sbn.packageName,
+            "key" to sbn.key,
+        ))
+    }
+}
