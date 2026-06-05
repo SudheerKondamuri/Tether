@@ -39,5 +39,44 @@ class ForegroundServicePlugin : Service() {
                         val intent = Intent(context, ForegroundServicePlugin::class.java)
                         context.stopService(intent)
                         result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+    }
 
-}}}}}}
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Tether")
+            .setContentText("Connected to peer device")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+
+        startForeground(NOTIFICATION_ID, notification)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Tether Connection",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Keeps Tether connected to your peer device"
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+    }
+}
