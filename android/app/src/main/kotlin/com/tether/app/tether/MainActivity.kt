@@ -13,4 +13,16 @@ class MainActivity : FlutterActivity() {
         clipboardPlugin = ClipboardPlugin(this)
         clipboardPlugin?.register(flutterEngine)
 
-}}
+        // Register notification plugin
+        NotificationPlugin.register(flutterEngine, this)
+
+        // Register foreground service plugin
+        ForegroundServicePlugin.register(flutterEngine, this)
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        clipboardPlugin?.unregister()
+        NotificationPlugin.unregister()
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+}
