@@ -28,4 +28,31 @@ class TetherTextField extends StatelessWidget {
     this.onChanged,
   });
 
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: maxLines == 1 ? 40 : null,
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        maxLines: maxLines,
+        onSubmitted: onSubmitted,
+        onChanged: onChanged,
+        style: TextStyle(
+          fontFamily: isMonospace ? 'JetBrainsMono' : 'Inter',
+          fontSize: isMonospace ? 13 : 14,
+          color: TetherColors.textPrimary,
+        ),
+        cursorColor: TetherColors.accentPrimary,
+        decoration: InputDecoration(
+          hintText: hint,
+          labelText: label,
+          prefixIcon: prefixIcon != null
+              ? Icon(prefixIcon, size: 18, color: TetherColors.textSecondary)
+              : null,
+          suffixIcon: suffixIcon,
+        ),
+      ),
+    );
+  }
 }
