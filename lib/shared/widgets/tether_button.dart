@@ -66,5 +66,72 @@ class TetherButton extends StatelessWidget {
                   ? TetherColors.textDisabled
                   : TetherColors.textPrimary,
               side: BorderSide(
+                color: disabled
+                    ? TetherColors.borderSubtle
+                    : TetherColors.borderSubtle,
+              ),
+              textStyle: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: fontSize,
+                fontWeight: FontWeight.w400,
+              ),
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmall ? 12 : 20,
+              ),
+            ),
+            child: _buildChild(
+              disabled ? TetherColors.textDisabled : TetherColors.textPrimary,
+              fontSize,
+            ),
+          ),
+        );
 
-}}}
+      case TetherButtonVariant.danger:
+        return SizedBox(
+          height: height,
+          child: OutlinedButton(
+            onPressed: disabled || isLoading ? null : onPressed,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: TetherColors.accentDanger,
+              side: const BorderSide(color: TetherColors.accentDanger),
+              textStyle: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: fontSize,
+                fontWeight: FontWeight.w500,
+              ),
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmall ? 12 : 20,
+              ),
+            ),
+            child: _buildChild(TetherColors.accentDanger, fontSize),
+          ),
+        );
+    }
+  }
+
+  Widget _buildChild(Color iconColor, double fontSize) {
+    if (isLoading) {
+      return SizedBox(
+        width: fontSize + 2,
+        height: fontSize + 2,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: iconColor,
+        ),
+      );
+    }
+
+    if (icon != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: fontSize + 2, color: iconColor),
+          const SizedBox(width: 6),
+          Text(label),
+        ],
+      );
+    }
+
+    return Text(label);
+  }
+}
