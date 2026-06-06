@@ -30,5 +30,35 @@ class V2LockedButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-
-}}
+              const Icon(
+                Icons.lock_outline,
+                size: 14,
+                color: TetherColors.textDisabled,
+              ),
+              const SizedBox(width: 6),
+              if (icon != null) ...[
+                Icon(icon, size: 16, color: TetherColors.textDisabled),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                  color: TetherColors.textDisabled,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const TetherBadge(
+                label: 'v2',
+                color: TetherColors.accentPrimary,
+                isSmall: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
