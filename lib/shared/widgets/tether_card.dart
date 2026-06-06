@@ -21,5 +21,27 @@ class TetherCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final border = isSelected
+        ? TetherColors.accentPrimary.withAlpha(120)
+        : (borderColor ?? TetherColors.borderSubtle);
 
-}}
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      decoration: BoxDecoration(
+        color: TetherColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(TetherRadius.card),
+        border: Border.all(color: border, width: 1),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(TetherRadius.card),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(TetherRadius.card),
+          hoverColor: TetherColors.surfaceHigher,
+          splashColor: TetherColors.accentPrimary.withAlpha(20),
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+  }
+}
