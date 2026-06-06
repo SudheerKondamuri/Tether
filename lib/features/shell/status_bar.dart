@@ -46,4 +46,49 @@ class StatusBar extends ConsumerWidget {
             style: TetherTheme.monoSmall.copyWith(fontSize: 11),
           ),
 
-}}
+          const Spacer(),
+
+          // ─── Latency ───
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              color: TetherColors.surfaceElevated,
+            ),
+            child: Text(
+              '-- ms',
+              style: TetherTheme.monoSmall.copyWith(fontSize: 11),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // ─── Peer Name / Sync Status ───
+          Text(
+            isConnected
+                ? connDevice?.name ?? 'Connected'
+                : 'Not synced',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 11,
+              color: isConnected
+                  ? TetherColors.accentSecondary
+                  : TetherColors.textDisabled,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ConnectionStatus _mapStatus(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.connected:
+        return ConnectionStatus.connected;
+      case TetherConnectionState.connecting:
+      case TetherConnectionState.searching:
+        return ConnectionStatus.searching;
+      case TetherConnectionState.disconnected:
+        return ConnectionStatus.disconnected;
+    }
+  }
+}
