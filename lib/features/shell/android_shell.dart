@@ -201,5 +201,207 @@ class _AndroidHome extends ConsumerWidget {
           const SizedBox(height: 24),
 
           // ─── Recent Activity ───
+          Text(
+            'RECENT ACTIVITY',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          _ActivityItem(
+            icon: Icons.content_paste,
+            iconColor: TetherColors.accentPrimary,
+            text: 'No activity yet',
+            time: '--:--',
+          ),
+        ],
+      ),
+    );
+  }
 
-}}
+  String _stateLabel(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.connected:
+        return 'Connected';
+      case TetherConnectionState.connecting:
+        return 'Connecting...';
+      case TetherConnectionState.searching:
+        return 'Searching...';
+      case TetherConnectionState.disconnected:
+        return 'No device connected';
+    }
+  }
+
+  String _stateDetail(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.searching:
+        return 'Scanning local network...';
+      case TetherConnectionState.connecting:
+        return 'Establishing TLS handshake...';
+      case TetherConnectionState.disconnected:
+        return 'Tap QR icon to pair';
+      case TetherConnectionState.connected:
+        return '';
+    }
+  }
+
+  ConnectionStatus _mapStatus(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.connected:
+        return ConnectionStatus.connected;
+      case TetherConnectionState.connecting:
+      case TetherConnectionState.searching:
+        return ConnectionStatus.searching;
+      case TetherConnectionState.disconnected:
+        return ConnectionStatus.disconnected;
+    }
+  }
+}
+
+class _BatteryChip extends StatelessWidget {
+  final int battery;
+  const _BatteryChip({required this.battery});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = battery > 20
+        ? TetherColors.accentSecondary
+        : TetherColors.accentDanger;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            battery > 80
+                ? Icons.battery_full
+                : battery > 20
+                    ? Icons.battery_3_bar
+                    : Icons.battery_alert,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$battery%',
+            style: TextStyle(
+              fontFamily: 'JetBrainsMono',
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModulePill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+
+  const _ModulePill({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: TetherColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isActive
+              ? TetherColors.accentSecondary.withAlpha(80)
+              : TetherColors.borderSubtle,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14,
+              color: isActive
+                  ? TetherColors.accentSecondary
+                  : TetherColors.textDisabled),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: isActive
+                  ? TetherColors.textPrimary
+                  : TetherColors.textDisabled,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            isActive ? 'ON' : 'OFF',
+            style: TextStyle(
+              fontFamily: 'JetBrainsMono',
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: isActive
+                  ? TetherColors.accentSecondary
+                  : TetherColors.textDisabled,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityItem extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String text;
+  final String time;
+
+  const _ActivityItem({
+    required this.icon,
+    required this.iconColor,
+    required this.text,
+    required this.time,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      decoration: BoxDecoration(
+        color: TetherColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: TetherColors.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: iconColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 13,
+                color: TetherColors.textSecondary,
+              ),
+            ),
+          ),
+          Text(
+            time,
+            style: TetherTheme.monoSmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
