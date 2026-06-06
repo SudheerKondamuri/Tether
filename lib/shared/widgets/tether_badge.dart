@@ -37,5 +37,43 @@ class TetherBadge extends StatelessWidget {
         ),
       ),
     );
+  }
+}
 
-}}
+/// Circular count badge for navigation item notification counts.
+class TetherCountBadge extends StatelessWidget {
+  final int count;
+  final Color color;
+
+  const TetherCountBadge({
+    super.key,
+    required this.count,
+    this.color = TetherColors.accentPrimary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (count == 0) return const SizedBox.shrink();
+
+    final display = count > 99 ? '99+' : '$count';
+
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        display,
+        style: const TextStyle(
+          fontFamily: 'Inter',
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
