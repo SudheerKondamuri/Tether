@@ -63,5 +63,69 @@ class LinuxShell extends ConsumerWidget {
                     },
                     child: _buildContent(selectedNav),
                   ),
+                ),
 
-}}
+                // ─── Vertical divider ───
+                Container(
+                  width: 1,
+                  color: TetherColors.borderSubtle,
+                ),
+
+                // ─── Right Detail Panel ───
+                SizedBox(
+                  width: 280,
+                  child: Container(
+                    color: TetherColors.surfaceElevated,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'DETAIL',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontSize: 11),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Select an item to view details',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: TetherColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ─── Status Bar ───
+          const StatusBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(int index) {
+    switch (index) {
+      case 0:
+        return const DashboardScreen(key: ValueKey(0));
+      case 1:
+        return const ClipboardScreen(key: ValueKey(1));
+      case 2:
+        return const FilesScreen(key: ValueKey(2));
+      case 3:
+        return const NotificationsScreen(key: ValueKey(3));
+      case 4:
+        return const MirrorScreen(key: ValueKey(4));
+      case 5:
+        return const SettingsScreen(key: ValueKey(5));
+      default:
+        return const DashboardScreen(key: ValueKey(0));
+    }
+  }
+}
