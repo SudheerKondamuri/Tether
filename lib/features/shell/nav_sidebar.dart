@@ -150,5 +150,155 @@ class NavSidebar extends ConsumerWidget {
             icon: Icons.folder_outlined,
             label: 'Files',
             index: 2,
+            isActive: selectedIndex == 2,
+            onTap: () => ref.read(selectedNavProvider.notifier).state = 2,
+          ),
+          _NavItem(
+            icon: Icons.notifications_outlined,
+            label: 'Notifications',
+            index: 3,
+            isActive: selectedIndex == 3,
+            badgeCount: 0,
+            onTap: () => ref.read(selectedNavProvider.notifier).state = 3,
+          ),
+          _NavItem(
+            icon: Icons.monitor_outlined,
+            label: 'Screen Mirror',
+            index: 4,
+            isActive: selectedIndex == 4,
+            onTap: () => ref.read(selectedNavProvider.notifier).state = 4,
+          ),
 
-}}
+          const Spacer(),
+
+          // ─── Settings (pinned to bottom) ───
+          _NavItem(
+            icon: Icons.settings_outlined,
+            label: 'Settings',
+            index: 5,
+            isActive: selectedIndex == 5,
+            onTap: () => ref.read(selectedNavProvider.notifier).state = 5,
+          ),
+
+          // ─── Footer ───
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'v${TetherConstants.appVersion}',
+                  style: TetherTheme.monoSmall,
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'v2 features locked',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    color: TetherColors.textDisabled,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ConnectionStatus _mapStatus(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.connected:
+        return ConnectionStatus.connected;
+      case TetherConnectionState.connecting:
+      case TetherConnectionState.searching:
+        return ConnectionStatus.searching;
+      case TetherConnectionState.disconnected:
+        return ConnectionStatus.disconnected;
+    }
+  }
+}
+
+class _NavItem extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final int index;
+  final bool isActive;
+  final int? badgeCount;
+  final VoidCallback onTap;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.index,
+    required this.isActive,
+    this.badgeCount,
+    required this.onTap,
+  });
+
+  @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = widget.isActive;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 40,
+          decoration: BoxDecoration(
+            color: isActive || _hovering
+                ? TetherColors.surfaceElevated
+                : Colors.transparent,
+            border: Border(
+              left: BorderSide(
+                color: isActive
+                    ? TetherColors.accentPrimary
+                    : Colors.transparent,
+                width: 3,
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.only(left: 12, right: 12),
+          child: Row(
+            children: [
+              Icon(
+                widget.icon,
+                size: 16,
+                color: isActive
+                    ? TetherColors.textPrimary
+                    : TetherColors.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    color: isActive
+                        ? TetherColors.textPrimary
+                        : TetherColors.textSecondary,
+                  ),
+                ),
+              ),
+              if (widget.badgeCount != null && widget.badgeCount! > 0)
+                TetherCountBadge(count: widget.badgeCount!),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
