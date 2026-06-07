@@ -29,11 +29,21 @@ class TcpServer {
     if (_server != null) return;
 
     final ctx = await TlsManager.createServerContext();
-    _server = await SecureServerSocket.bind(
-      InternetAddress.anyIPv4,
-      port,
-      ctx,
-    );
+    int retries = 0;
+    while (retries < 5) {
+      try {
+        _server = await SecureServerSocket.bind(
+          InternetAddress.anyIPv4,
+          port,
+          ctx,
+        );
+        break;
+      } catch (e) {
+        retries++;
+        if (retries >= 5) rethrow;
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
 
     _server!.listen(
       _handleConnection,
