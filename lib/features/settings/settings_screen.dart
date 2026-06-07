@@ -206,5 +206,211 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
 
           // ─── Security ───
           _SectionHeader(title: 'SECURITY'),
+          const SizedBox(height: 8),
+          TetherCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Certificate Fingerprint',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: TetherColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: TetherColors.surfaceHigher,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: SelectableText(
+                    'Loading...',
+                    style: const TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 11,
+                      color: TetherColors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TetherButton(
+                  label: 'Regenerate Certificate',
+                  variant: TetherButtonVariant.danger,
+                  isSmall: true,
+                  icon: Icons.refresh,
+                  onPressed: () {
+                    // TODO: Regenerate TLS cert
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
 
-}}
+          // ─── v2 Features ───
+          _SectionHeader(title: 'UPCOMING'),
+          const SizedBox(height: 8),
+          TetherCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'These features are planned for v2:',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    color: TetherColors.textDisabled,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: const [
+                    V2LockedButton(label: 'SMS Gateway', icon: Icons.sms),
+                    V2LockedButton(
+                        label: 'Remote Shell', icon: Icons.terminal),
+                    V2LockedButton(
+                        label: 'Audio Routing', icon: Icons.headphones),
+                    V2LockedButton(
+                        label: 'Hotspot Toggle', icon: Icons.wifi_tethering),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // ─── About ───
+          _SectionHeader(title: 'ABOUT'),
+          const SizedBox(height: 8),
+          TetherCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _InfoRow(label: 'App', value: TetherConstants.appName),
+                _InfoRow(
+                    label: 'Version', value: 'v${TetherConstants.appVersion}'),
+                _InfoRow(label: 'TCP Port', value: '${TetherConstants.tcpPort}'),
+                _InfoRow(label: 'Max Clipboard', value: '${TetherConstants.clipboardMaxHistory}'),
+                _InfoRow(label: 'Encryption', value: 'TLS 1.3 (self-signed)'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium,
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  final String label;
+  final String description;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SwitchRow({
+    required this.label,
+    required this.description,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: TetherColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    color: TetherColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: TetherColors.accentPrimary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 13,
+                color: TetherColors.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontFamily: 'JetBrainsMono',
+                fontSize: 13,
+                color: TetherColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
