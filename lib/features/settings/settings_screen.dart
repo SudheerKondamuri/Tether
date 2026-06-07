@@ -108,29 +108,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
                   value: _autoConnect,
                   onChanged: (v) => setState(() => _autoConnect = v),
                 ),
-                if (PlatformUtils.isAndroid) ...[
-                  const Divider(color: TetherColors.borderSubtle, height: 1),
-                  _ClickableRow(
-                    label: 'Battery Optimization Whitelist',
-                    description: _ignoringBatteryOptimizations
-                        ? 'Optimizations disabled (recommended)'
-                        : 'Tap to exempt from battery savings',
-                    onTap: () async {
-                      if (!_ignoringBatteryOptimizations) {
-                        const channel = MethodChannel(TetherConstants.foregroundServiceChannel);
-                        await channel.invokeMethod('requestIgnoreBatteryOptimizations');
-                      }
-                    },
-                    trailing: Icon(
-                      _ignoringBatteryOptimizations
-                          ? Icons.check_circle_rounded
-                          : Icons.warning_amber_rounded,
-                      color: _ignoringBatteryOptimizations
-                          ? TetherColors.accentSecondary
-                          : TetherColors.accentWarning,
-                    ),
-                  ),
-                ],
                 const Divider(
                     color: TetherColors.borderSubtle, height: 1),
                 Padding(
@@ -204,6 +181,71 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
             ),
           ),
           const SizedBox(height: 24),
+
+          if (PlatformUtils.isAndroid) ...[
+            _SectionHeader(title: 'BACKGROUND PROTECTION'),
+            const SizedBox(height: 8),
+            TetherCard(
+              child: Column(
+                children: [
+                  _ClickableRow(
+                    label: 'Autostart / Startup Settings',
+                    description: 'Allow Tether to run in background when swiped away',
+                    onTap: () async {
+                      const channel = MethodChannel(TetherConstants.foregroundServiceChannel);
+                      final bool opened = await channel.invokeMethod('openAutostartSettings');
+                      if (mounted && !opened) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Could not open startup settings. Please configure manually.'),
+                            backgroundColor: TetherColors.accentDanger,
+                          ),
+                        );
+                      }
+                    },
+                    trailing: const Icon(
+                      Icons.launch_rounded,
+                      color: TetherColors.textSecondary,
+                      size: 20,
+                    ),
+                  ),
+                  const Divider(color: TetherColors.borderSubtle, height: 1),
+                  _ClickableRow(
+                    label: 'Battery Optimization Whitelist',
+                    description: _ignoringBatteryOptimizations
+                        ? 'Optimizations disabled (recommended)'
+                        : 'Tap to exempt from battery savings',
+                    onTap: () async {
+                      if (!_ignoringBatteryOptimizations) {
+                        const channel = MethodChannel(TetherConstants.foregroundServiceChannel);
+                        await channel.invokeMethod('requestIgnoreBatteryOptimizations');
+                      }
+                    },
+                    trailing: Icon(
+                      _ignoringBatteryOptimizations
+                          ? Icons.check_circle_rounded
+                          : Icons.warning_amber_rounded,
+                      color: _ignoringBatteryOptimizations
+                          ? TetherColors.accentSecondary
+                          : TetherColors.accentWarning,
+                    ),
+                  ),
+                  const Divider(color: TetherColors.borderSubtle, height: 1),
+                  _ClickableRow(
+                    label: 'Background Alive Guide',
+                    description: 'Instructions to prevent service drops on Vivo/Xiaomi/etc.',
+                    onTap: _showBackgroundAliveGuide,
+                    trailing: const Icon(
+                      Icons.help_outline_rounded,
+                      color: TetherColors.accentPrimary,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
 
           // ─── Modules ───
           _SectionHeader(title: 'MODULES'),
@@ -350,7 +392,141 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
       ),
     );
   }
+
+  void _showBackgroundAliveGuide() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: TetherColors.surfaceElevated,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(TetherRadius.modal),
+            side: const BorderSide(color: TetherColors.borderSubtle),
+          ),
+          title: Row(
+            children: const [
+              Icon(Icons.shield_outlined, color: TetherColors.accentPrimary),
+              SizedBox(width: 8),
+              Text(
+                'Background Alive Guide',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  color: TetherColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'To prevent Android from killing Tether when swiped from recent tasks, configure these settings:',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    color: TetherColors.textPrimary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildGuideStep(
+                  step: '1',
+                  title: 'Enable Autostart / Background Startup',
+                  description: 'Allow Tether to run background tasks autonomously by toggling its switch in the Autostart manager.',
+                ),
+                const SizedBox(height: 12),
+                _buildGuideStep(
+                  step: '2',
+                  title: 'Allow High Background Power',
+                  description: 'Go to Settings > Battery > Background power consumption (on Vivo/iQOO) and choose "Allow high background power consumption" (or set Battery usage to "Unrestricted" in App Info).',
+                ),
+                const SizedBox(height: 12),
+                _buildGuideStep(
+                  step: '3',
+                  title: 'Lock Tether in Recent Tasks',
+                  description: 'Open recent tasks view, swipe down on the Tether card (or long-press it), and select the lock icon. This prevents the OS from clearing it when swiped away.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Got it',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  color: TetherColors.accentPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGuideStep({
+    required String step,
+    required String title,
+    required String description,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: TetherColors.surfaceHigher,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            step,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              color: TetherColors.accentPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  color: TetherColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  color: TetherColors.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
+
 
 class _SectionHeader extends StatelessWidget {
   final String title;
