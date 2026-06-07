@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -95,8 +96,87 @@ class ForegroundServicePlugin : Service() {
                         }
                         result.success(false)
                     }
+                    "openAutostartSettings" -> {
+                        val opened = openAutostartSettings(context)
+                        result.success(opened)
+                    }
                     else -> result.notImplemented()
                 }
+            }
+        }
+
+        private fun openAutostartSettings(context: Context): Boolean {
+            val manufacturer = Build.MANUFACTURER.lowercase()
+            val intents = mutableListOf<Intent>()
+
+            when {
+                manufacturer.contains("xiaomi") -> {
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+                    })
+                }
+                manufacturer.contains("oppo") -> {
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")
+                    })
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startupapp.StartupAppListActivity")
+                    })
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.FakeActivity")
+                    })
+                }
+                manufacturer.contains("vivo") || manufacturer.contains("iqoo") -> {
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")
+                    })
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager")
+                    })
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")
+                    })
+                }
+                manufacturer.contains("huawei") || manufacturer.contains("honor") -> {
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")
+                    })
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")
+                    })
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.appcontrol.activity.StartupAppControlActivity")
+                    })
+                }
+                manufacturer.contains("oneplus") -> {
+                    intents.add(Intent().apply {
+                        component = ComponentName("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity")
+                    })
+                }
+            }
+
+            // Always add a fallback intent to app details screen
+            val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+
+            for (intent in intents) {
+                try {
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    context.startActivity(intent)
+                    return true
+                } catch (_: Exception) {
+                    // Try next one
+                }
+            }
+
+            // Fallback
+            return try {
+                fallbackIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                context.startActivity(fallbackIntent)
+                true
+            } catch (_: Exception) {
+                false
             }
         }
     }
