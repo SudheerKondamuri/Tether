@@ -170,5 +170,175 @@ class _ClipboardTileState extends State<_ClipboardTile> {
   bool _hovering = false;
 
   @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: widget.isSelected
+                ? TetherColors.surfaceHigher
+                : _hovering
+                    ? TetherColors.surfaceElevated
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: widget.isSelected
+                ? Border.all(color: TetherColors.accentPrimary.withAlpha(80))
+                : null,
+          ),
+          child: Row(
+            children: [
+              // Type icon
+              Icon(
+                _iconForType(widget.item.dataType),
+                size: 14,
+                color: TetherColors.textSecondary,
+              ),
+              const SizedBox(width: 10),
 
+              // Content preview
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.item.content.length > 120
+                          ? '${widget.item.content.substring(0, 120)}...'
+                          : widget.item.content,
+                      style: TextStyle(
+                        fontFamily: widget.item.dataType == 'CODE'
+                            ? 'JetBrainsMono'
+                            : 'Inter',
+                        fontSize: 13,
+                        color: TetherColors.textPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        TetherBadge(
+                          label: widget.item.dataType,
+                          color: _colorForType(widget.item.dataType),
+                          isSmall: true,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.item.source,
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 11,
+                            color: TetherColors.textDisabled,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _formatTime(widget.item.timestamp),
+                          style: TetherTheme.monoSmall,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // Actions
+              if (_hovering || widget.isSelected) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 14),
+                  color: TetherColors.textSecondary,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  padding: EdgeInsets.zero,
+                  onPressed: widget.onCopy,
+                  tooltip: 'Copy',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 14),
+                  color: TetherColors.accentDanger,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  padding: EdgeInsets.zero,
+                  onPressed: widget.onDelete,
+                  tooltip: 'Delete',
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _iconForType(String type) {
+    switch (type.toUpperCase()) {
+      case 'URL':
+        return Icons.link;
+      case 'CODE':
+        return Icons.code;
+      case 'IMAGE':
+        return Icons.image_outlined;
+      default:
+        return Icons.text_snippet_outlined;
+    }
+  }
+
+  Color _colorForType(String type) {
+    switch (type.toUpperCase()) {
+      case 'URL':
+        return TetherColors.accentPrimary;
+      case 'CODE':
+        return TetherColors.accentSecondary;
+      case 'IMAGE':
+        return Colors.amber;
+      default:
+        return TetherColors.textSecondary;
+    }
+  }
+
+  String _formatTime(DateTime time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.content_paste_outlined,
+              size: 48, color: TetherColors.textDisabled),
+          const SizedBox(height: 12),
+          const Text(
+            'No clipboard entries yet',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 14,
+              color: TetherColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Copy something on a connected device to see it here',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 12,
+              color: TetherColors.textDisabled,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
