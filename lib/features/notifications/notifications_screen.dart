@@ -122,5 +122,128 @@ class _NotificationTileState extends State<_NotificationTile> {
           height: 16,
           fit: BoxFit.cover,
         );
+      } catch (_) {}
+    }
 
-}}}}
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _hovering
+                ? TetherColors.surfaceHigher
+                : TetherColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: TetherColors.borderSubtle),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: TetherColors.surfaceHigher,
+                    ),
+                    alignment: Alignment.center,
+                    child: iconWidget,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.notif.appName,
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: TetherColors.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          widget.notif.title,
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: TetherColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _formatTime(widget.notif.timestamp),
+                    style: TetherTheme.monoSmall,
+                  ),
+                ],
+              ),
+              if (_expanded) ...[
+                const SizedBox(height: 8),
+                Text(
+                  widget.notif.body,
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    color: TetherColors.textSecondary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    final h = time.hour.toString().padLeft(2, '0');
+    final m = time.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.notifications_outlined,
+              size: 48, color: TetherColors.textDisabled),
+          const SizedBox(height: 12),
+          const Text(
+            'No notifications',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 14,
+              color: TetherColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Notifications from the connected Android device appear here',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 12,
+              color: TetherColors.textDisabled,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
