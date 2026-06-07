@@ -49,6 +49,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
 
   Future<void> _checkPermission() async {
     final granted = await ref.read(notificationBridgeProvider).isPermissionGranted();
+    if (granted) {
+      await ref.read(notificationBridgeProvider).startListening();
+    }
     if (mounted) {
       setState(() {
         _notificationPermissionGranted = granted;

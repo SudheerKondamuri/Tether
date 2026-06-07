@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:tether/core/networking/tcp_server.dart';
@@ -7,6 +10,8 @@ import 'package:tether/core/networking/tcp_client.dart';
 import 'package:tether/core/networking/packet_protocol.dart';
 import 'package:tether/shared/constants.dart';
 import 'package:tether/shared/platform_utils.dart';
+import 'package:tether/core/database/database_provider.dart';
+import 'package:tether/core/networking/mdns_discovery.dart';
 
 /// Represents a connected peer device.
 class ConnectedDevice {
@@ -29,6 +34,32 @@ class ConnectedDevice {
     this.wifiStrength,
     DateTime? lastSeen,
   }) : lastSeen = lastSeen ?? DateTime.now();
+
+  Map<String, dynamic> toJson() => {
+        'deviceId': deviceId,
+        'name': name,
+        'platform': platform,
+        'ip': ip,
+        'port': port,
+        'battery': battery,
+        'wifiStrength': wifiStrength,
+        'lastSeen': lastSeen.toIso8601String(),
+      };
+
+  factory ConnectedDevice.fromJson(Map<String, dynamic> json) {
+    return ConnectedDevice(
+      deviceId: json['deviceId'] as String,
+      name: json['name'] as String,
+      platform: json['platform'] as String,
+      ip: json['ip'] as String,
+      port: json['port'] as int,
+      battery: json['battery'] as int?,
+      wifiStrength: json['wifiStrength'] as int?,
+      lastSeen: json['lastSeen'] != null
+          ? DateTime.parse(json['lastSeen'] as String)
+          : null,
+    );
+  }
 }
 
 /// Connection state enum — prefixed to avoid collision with Flutter's ConnectionState.
@@ -36,10 +67,16 @@ enum TetherConnectionState { disconnected, searching, connecting, connected }
 
 /// Orchestrates TCP server + client, manages connection lifecycle.
 class ConnectionManager {
+  final Ref ref;
   final TcpServer _server = TcpServer();
   final TcpClient _client = TcpClient();
-  final String deviceId;
-  final String deviceName;
+
+  static bool isBackgroundIsolate = false;
+  String _deviceId = const Uuid().v4();
+  String _deviceName = Platform.localHostname;
+
+  String get deviceId => _deviceId;
+  String get deviceName => _deviceName;
 
   ConnectedDevice? _peer;
   TetherConnectionState _state = TetherConnectionState.disconnected;
@@ -56,11 +93,65 @@ class ConnectionManager {
   ConnectedDevice? get peer => _peer;
   bool get isConnected => _state == TetherConnectionState.connected;
 
-  ConnectionManager({
-    String? deviceId,
-    String? deviceName,
-  })  : deviceId = deviceId ?? const Uuid().v4(),
-        deviceName = deviceName ?? Platform.localHostname;
+  ConnectionManager({required this.ref});
+
+  Future<void> init() async {
+    final db = ref.read(databaseProvider);
+    
+    // Load or generate device ID
+    var storedId = await db.getSetting('device_id');
+    if (storedId == null || storedId.isEmpty) {
+      storedId = const Uuid().v4();
+      await db.setSetting('device_id', storedId);
+    }
+    _deviceId = storedId;
+
+    // Load or generate device Name
+    var storedName = await db.getSetting('device_name');
+    if (storedName == null || storedName.isEmpty) {
+      storedName = Platform.localHostname;
+      await db.setSetting('device_name', storedName);
+    }
+    _deviceName = storedName;
+
+    // Initialize state in database settings
+    await db.setSetting('connection_state', _state.name);
+    _updatePeerInSettings(_peer);
+
+    // Listen to discovery events to evaluate peers for auto-connection
+    ref.read(mdnsDiscoveryProvider).devicesStream.listen((devices) {
+      if (_state == TetherConnectionState.connected || _state == TetherConnectionState.connecting) {
+        return;
+      }
+      for (final device in devices) {
+        evaluateDiscoveredPeer(device.name, device.ip, device.port, device.nonce);
+      }
+    });
+  }
+
+  void evaluateDiscoveredPeer(String peerName, String host, int port, int peerNonce) {
+    final mdns = ref.read(mdnsDiscoveryProvider);
+    final myNonce = mdns.discoverySessionNonce;
+
+    if (myNonce == peerNonce) return; // Self detection protection
+
+    if (myNonce > peerNonce) {
+      // Deterministic Client assignment
+      connectTo(host: host, port: port);
+    } else {
+      // Deterministic Server lock -- yields execution path to let inbound socket attach cleanly
+      developer.log("Yielding connection initialization role to peer node: $peerName");
+    }
+  }
+
+  void _updatePeerInSettings(ConnectedDevice? peer) {
+    final db = ref.read(databaseProvider);
+    if (peer == null) {
+      db.setSetting('connected_peer', '');
+    } else {
+      db.setSetting('connected_peer', jsonEncode(peer.toJson()));
+    }
+  }
 
   /// Start the TCP server and begin accepting connections.
   Future<void> startServer() async {
@@ -71,6 +162,7 @@ class ConnectionManager {
     _server.onDisconnect = (socket) {
       _peer = null;
       _peerController.add(null);
+      _updatePeerInSettings(null);
       _updateState(TetherConnectionState.disconnected);
     };
 
@@ -83,6 +175,18 @@ class ConnectionManager {
     required String host,
     int port = TetherConstants.tcpPort,
   }) async {
+    if (PlatformUtils.isAndroid && !isBackgroundIsolate) {
+      final backgroundPort = IsolateNameServer.lookupPortByName('tether_background_rpc');
+      if (backgroundPort != null) {
+        backgroundPort.send({
+          'command': 'CONNECT_TO',
+          'host': host,
+          'port': port,
+        });
+        return true;
+      }
+    }
+
     _updateState(TetherConnectionState.connecting);
 
     _client.onPacket = _handleClientPacket;
@@ -90,6 +194,7 @@ class ConnectionManager {
       if (!connected) {
         _peer = null;
         _peerController.add(null);
+        _updatePeerInSettings(null);
         _updateState(TetherConnectionState.disconnected);
       }
     };
@@ -129,6 +234,7 @@ class ConnectionManager {
         port: socket.remotePort,
       );
       _peerController.add(_peer);
+      _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
 
       // Send our handshake back
@@ -148,6 +254,7 @@ class ConnectionManager {
         _peer!.wifiStrength = hb.wifiStrength;
         _peer!.lastSeen = DateTime.now();
         _peerController.add(_peer);
+        _updatePeerInSettings(_peer);
       }
     }
 
@@ -165,6 +272,7 @@ class ConnectionManager {
         port: _client.port ?? TetherConstants.tcpPort,
       );
       _peerController.add(_peer);
+      _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
     } else if (packet.type == PacketType.heartbeat) {
       final hb = HeartbeatPayload.fromJson(packet.payload);
@@ -173,6 +281,7 @@ class ConnectionManager {
         _peer!.wifiStrength = hb.wifiStrength;
         _peer!.lastSeen = DateTime.now();
         _peerController.add(_peer);
+        _updatePeerInSettings(_peer);
       }
     }
 
@@ -191,6 +300,8 @@ class ConnectionManager {
   void _updateState(TetherConnectionState newState) {
     _state = newState;
     _stateController.add(newState);
+    // Write state to database settings for UI cross-isolate synchronization
+    ref.read(databaseProvider).setSetting('connection_state', newState.name);
   }
 
   /// Disconnect and stop everything.
@@ -206,17 +317,38 @@ class ConnectionManager {
 // ─── Riverpod Providers ───
 
 final connectionManagerProvider = Provider<ConnectionManager>((ref) {
-  final manager = ConnectionManager();
+  final manager = ConnectionManager(ref: ref);
   ref.onDispose(() => manager.dispose());
   return manager;
 });
 
 final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
+  if (PlatformUtils.isAndroid) {
+    final db = ref.watch(databaseProvider);
+    return db.watchSetting('connection_state').map((val) {
+      if (val == null) return TetherConnectionState.disconnected;
+      return TetherConnectionState.values.firstWhere(
+        (e) => e.name == val,
+        orElse: () => TetherConnectionState.disconnected,
+      );
+    });
+  }
   final manager = ref.watch(connectionManagerProvider);
   return manager.stateStream;
 });
 
 final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
+  if (PlatformUtils.isAndroid) {
+    final db = ref.watch(databaseProvider);
+    return db.watchSetting('connected_peer').map((val) {
+      if (val == null || val.isEmpty) return null;
+      try {
+        return ConnectedDevice.fromJson(jsonDecode(val) as Map<String, dynamic>);
+      } catch (_) {
+        return null;
+      }
+    });
+  }
   final manager = ref.watch(connectionManagerProvider);
   return manager.peerStream;
 });

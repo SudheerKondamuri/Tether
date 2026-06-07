@@ -126,6 +126,12 @@ class AppDatabase extends _$AppDatabase {
     return result?.value;
   }
 
+  Stream<String?> watchSetting(String key) {
+    return (select(settings)..where((t) => t.key.equals(key)))
+        .watchSingleOrNull()
+        .map((row) => row?.value);
+  }
+
   Future<void> setSetting(String key, String value) {
     return into(settings).insertOnConflictUpdate(
       SettingsCompanion(
@@ -178,6 +184,12 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dir = await getApplicationDocumentsDirectory();
     final file = File(p.join(dir.path, TetherConstants.databaseName));
-    return NativeDatabase.createInBackground(file);
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (rawDb) {
+        rawDb.execute('PRAGMA journal_mode=WAL;');
+        rawDb.execute('PRAGMA synchronous=NORMAL;');
+      },
+    );
   });
 }

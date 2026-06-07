@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/widgets/tether_badge.dart';
 import 'package:tether/core/services/notification_bridge_service.dart';
+import 'package:tether/core/database/app_database.dart';
 
 /// Notification mirror screen.
 class NotificationsScreen extends ConsumerStatefulWidget {
@@ -93,7 +94,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 }
 
 class _NotificationTile extends StatefulWidget {
-  final TetherNotification notif;
+  final NotificationHistoryData notif;
 
   const _NotificationTile({required this.notif});
 
@@ -113,9 +114,9 @@ class _NotificationTileState extends State<_NotificationTile> {
       color: TetherColors.textSecondary,
     );
 
-    if (widget.notif.iconBase64 != null) {
+    if (widget.notif.iconB64 != null) {
       try {
-        final bytes = base64Decode(widget.notif.iconBase64!);
+        final bytes = base64Decode(widget.notif.iconB64!);
         iconWidget = Image.memory(
           bytes,
           width: 16,

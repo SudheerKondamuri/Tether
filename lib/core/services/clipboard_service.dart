@@ -243,7 +243,7 @@ final clipboardServiceProvider = Provider<ClipboardService>((ref) {
   return service;
 });
 
-final clipboardHistoryProvider = StreamProvider<List<ClipEntry>>((ref) {
-  final service = ref.watch(clipboardServiceProvider);
-  return service.historyStream;
+final clipboardHistoryProvider = StreamProvider<List<ClipboardEntry>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db.watchClipboardEntries();
 });

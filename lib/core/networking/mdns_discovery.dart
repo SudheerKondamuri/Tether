@@ -1,20 +1,26 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/constants.dart';
+import 'package:tether/shared/platform_utils.dart';
+import 'package:tether/core/database/database_provider.dart';
 
 /// A discovered Tether device on the local network.
 class DiscoveredDevice {
   final String name;
   final String ip;
   final int port;
+  final int nonce;
   final DateTime discoveredAt;
 
   DiscoveredDevice({
     required this.name,
     required this.ip,
     required this.port,
+    required this.nonce,
     DateTime? discoveredAt,
   }) : discoveredAt = discoveredAt ?? DateTime.now();
 
@@ -26,17 +32,43 @@ class DiscoveredDevice {
   int get hashCode => ip.hashCode ^ port.hashCode;
 
   @override
-  String toString() => 'DiscoveredDevice($name@$ip:$port)';
+  String toString() => 'DiscoveredDevice($name@$ip:$port, nonce: $nonce)';
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'ip': ip,
+        'port': port,
+        'nonce': nonce,
+        'discoveredAt': discoveredAt.toIso8601String(),
+      };
+
+  factory DiscoveredDevice.fromJson(Map<String, dynamic> json) {
+    return DiscoveredDevice(
+      name: json['name'] as String,
+      ip: json['ip'] as String,
+      port: json['port'] as int,
+      nonce: json['nonce'] as int,
+      discoveredAt: json['discoveredAt'] != null
+          ? DateTime.parse(json['discoveredAt'] as String)
+          : null,
+    );
+  }
 }
 
 /// mDNS and UDP Broadcast service for discovering and advertising Tether instances.
 class MdnsDiscovery {
+  final Ref ref;
+
+  // Ephemeral session identification
+  final int discoverySessionNonce = Random.secure().nextInt(10000000);
+
   BonsoirBroadcast? _broadcast;
   BonsoirDiscovery? _discovery;
   
   RawDatagramSocket? _udpListenerSocket;
   RawDatagramSocket? _udpDiscoverySocket;
   Timer? _udpPingTimer;
+  int _consecutiveSilenceCycles = 0;
 
   final _devicesController =
       StreamController<List<DiscoveredDevice>>.broadcast();
@@ -45,6 +77,18 @@ class MdnsDiscovery {
   Stream<List<DiscoveredDevice>> get devicesStream =>
       _devicesController.stream;
   List<DiscoveredDevice> get devices => _discovered.toList();
+
+  MdnsDiscovery({required this.ref});
+
+  void resetSilenceCounter() {
+    _consecutiveSilenceCycles = 0;
+  }
+
+  void _updateDevicesInSettings() {
+    final db = ref.read(databaseProvider);
+    final jsonStr = jsonEncode(_discovered.map((d) => d.toJson()).toList());
+    db.setSetting('discovered_devices', jsonStr);
+  }
 
   /// Start broadcasting this device as a Tether service (mDNS + UDP).
   Future<void> startBroadcast({
@@ -59,6 +103,9 @@ class MdnsDiscovery {
         name: deviceName,
         type: TetherConstants.mdnsServiceType,
         port: port,
+        attributes: {
+          'nonce': discoverySessionNonce.toString(),
+        },
       );
 
       _broadcast = BonsoirBroadcast(service: service);
@@ -77,7 +124,7 @@ class MdnsDiscovery {
           if (datagram != null) {
             final text = String.fromCharCodes(datagram.data);
             if (text.startsWith("TETHER_DISCOVER:")) {
-              final reply = "TETHER_REPLY:$deviceName:$port";
+              final reply = "TETHER_REPLY:$deviceName:$port:$discoverySessionNonce";
               _udpListenerSocket!.send(reply.codeUnits, datagram.address, datagram.port);
             }
           }
@@ -98,6 +145,7 @@ class MdnsDiscovery {
   /// Start discovering other Tether devices on the network (mDNS + UDP).
   Future<void> startDiscovery() async {
     await stopDiscovery();
+    resetSilenceCounter();
 
     // ─── mDNS Discovery ───
     try {
@@ -112,20 +160,26 @@ class MdnsDiscovery {
         } else if (event.type ==
             BonsoirDiscoveryEventType.discoveryServiceResolved) {
           final resolved = event.service as ResolvedBonsoirService;
+          final nonceStr = resolved.attributes['nonce'] ?? '0';
+          final nonce = int.tryParse(nonceStr) ?? 0;
           final device = DiscoveredDevice(
             name: resolved.name,
             ip: resolved.host ?? '',
             port: resolved.port,
+            nonce: nonce,
           );
           if (device.ip.isNotEmpty) {
+            resetSilenceCounter();
             _discovered.add(device);
             _devicesController.add(_discovered.toList());
+            _updateDevicesInSettings();
           }
         } else if (event.type ==
             BonsoirDiscoveryEventType.discoveryServiceLost) {
           _discovered.removeWhere(
               (d) => d.name == event.service?.name);
           _devicesController.add(_discovered.toList());
+          _updateDevicesInSettings();
         }
       });
 
@@ -138,8 +192,13 @@ class MdnsDiscovery {
       _udpDiscoverySocket!.broadcastEnabled = true;
 
       _udpPingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-        const ping = "TETHER_DISCOVER:ping";
+        final ping = "TETHER_DISCOVER:$discoverySessionNonce";
         _udpDiscoverySocket?.send(ping.codeUnits, InternetAddress("255.255.255.255"), 5281);
+        
+        _consecutiveSilenceCycles++;
+        if (_consecutiveSilenceCycles >= 3) { // 9 seconds of network silence
+          _executeUnicastSubnetProbing();
+        }
       });
 
       _udpDiscoverySocket!.listen((event) {
@@ -149,21 +208,55 @@ class MdnsDiscovery {
             final text = String.fromCharCodes(datagram.data);
             if (text.startsWith("TETHER_REPLY:")) {
               final parts = text.split(":");
-              if (parts.length >= 3) {
+              if (parts.length >= 4) {
                 final name = parts[1];
                 final port = int.tryParse(parts[2]) ?? TetherConstants.tcpPort;
+                final nonce = int.tryParse(parts[3]) ?? 0;
                 final device = DiscoveredDevice(
                   name: name,
                   ip: datagram.address.address,
                   port: port,
+                  nonce: nonce,
                 );
+                resetSilenceCounter();
                 _discovered.add(device);
                 _devicesController.add(_discovered.toList());
+                _updateDevicesInSettings();
               }
             }
           }
         }
       });
+    } catch (_) {}
+  }
+
+  Future<void> _executeUnicastSubnetProbing() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLinkLocal: false, 
+        type: InternetAddressType.IPv4
+      );
+      
+      for (var interface in interfaces) {
+        for (var addr in interface.addresses) {
+          final ip = addr.address;
+          if (ip.startsWith("127.")) continue;
+          
+          final subnetBase = ip.substring(0, ip.lastIndexOf('.'));
+          
+          // Asynchronously sweep the subnet scope point-to-point (Unicast bypasses driver drops)
+          for (int hostToken = 1; hostToken < 255; hostToken++) {
+            final targetDest = "$subnetBase.$hostToken";
+            if (targetDest == ip) continue; // Skip self
+            
+            _udpDiscoverySocket?.send(
+              "TETHER_DISCOVER:$discoverySessionNonce".codeUnits,
+              InternetAddress(targetDest),
+              5281
+            );
+          }
+        }
+      }
     } catch (_) {}
   }
 
@@ -179,6 +272,7 @@ class MdnsDiscovery {
     _udpDiscoverySocket = null;
 
     _discovered.clear();
+    _updateDevicesInSettings();
   }
 
   /// Stop everything and clean up.
@@ -192,12 +286,27 @@ class MdnsDiscovery {
 // ─── Riverpod Providers ───
 
 final mdnsDiscoveryProvider = Provider<MdnsDiscovery>((ref) {
-  final discovery = MdnsDiscovery();
+  final discovery = MdnsDiscovery(ref: ref);
   ref.onDispose(() => discovery.dispose());
   return discovery;
 });
 
 final discoveredDevicesProvider = StreamProvider<List<DiscoveredDevice>>((ref) {
+  if (PlatformUtils.isAndroid) {
+    final db = ref.watch(databaseProvider);
+    return db.watchSetting('discovered_devices').map((val) {
+      if (val == null || val.isEmpty) return [];
+      try {
+        final List<dynamic> list = jsonDecode(val) as List<dynamic>;
+        return list
+            .map((item) =>
+                DiscoveredDevice.fromJson(item as Map<String, dynamic>))
+            .toList();
+      } catch (_) {
+        return [];
+      }
+    });
+  }
   final discovery = ref.watch(mdnsDiscoveryProvider);
   return discovery.devicesStream;
 });

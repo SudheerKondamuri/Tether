@@ -206,6 +206,15 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<TetherConnectionState>>(
+      connectionStateProvider,
+      (prev, next) {
+        if (next.value == TetherConnectionState.connected) {
+          _loadFiles();
+        }
+      },
+    );
+
     final connectionState = ref.watch(connectionStateProvider).valueOrNull;
     final isConnected = connectionState == TetherConnectionState.connected;
 
@@ -245,6 +254,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                   ),
                   const SizedBox(width: 8),
                 ],
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 18),
+                  color: TetherColors.textSecondary,
+                  onPressed: _loadFiles,
+                  tooltip: 'Refresh',
+                ),
+                const SizedBox(width: 8),
                 TetherButton(
                   label: 'Send File',
                   icon: Icons.upload_file_outlined,

@@ -207,8 +207,7 @@ final notificationBridgeProvider = Provider<NotificationBridgeService>((ref) {
   return service;
 });
 
-final notificationsProvider =
-    StreamProvider<List<TetherNotification>>((ref) {
-  final service = ref.watch(notificationBridgeProvider);
-  return service.notificationStream;
+final notificationsProvider = StreamProvider<List<NotificationHistoryData>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db.watchNotifications();
 });

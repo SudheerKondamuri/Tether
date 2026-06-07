@@ -1,4 +1,7 @@
+import 'dart:isolate';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/platform_utils.dart';
@@ -34,8 +37,16 @@ class _TetherAppState extends ConsumerState<TetherApp> {
   }
 
   Future<void> _initServices() async {
+    if (PlatformUtils.isAndroid) {
+      // Start foreground service on Android UI startup
+      const MethodChannel(TetherConstants.foregroundServiceChannel)
+          .invokeMethod('startService');
+      return;
+    }
+
     // Start connection manager (TCP server)
     final connectionManager = ref.read(connectionManagerProvider);
+    await connectionManager.init();
     await connectionManager.startServer();
 
     // Start clipboard sync
@@ -74,4 +85,58 @@ class _TetherAppState extends ConsumerState<TetherApp> {
       ),
     );
   }
+}
+
+// Separate Headless Engine Entrypoint
+@pragma('vm:entry-point')
+void backgroundMain() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  final container = ProviderContainer();
+  final ReceivePort backgroundReceivePort = ReceivePort();
+  
+  // Expose memory port across isolates
+  IsolateNameServer.registerPortWithName(
+    backgroundReceivePort.sendPort, 
+    'tether_background_rpc'
+  );
+
+  // Initialize network stack scoped exclusively inside background engine
+  final connectionManager = container.read(connectionManagerProvider);
+  final mdns = container.read(mdnsDiscoveryProvider);
+
+  // Mark this as the background isolate
+  ConnectionManager.isBackgroundIsolate = true;
+
+  await connectionManager.init();
+  await connectionManager.startServer();
+  await mdns.startBroadcast(
+    deviceName: connectionManager.deviceName,
+    port: TetherConstants.tcpPort,
+  );
+  await mdns.startDiscovery();
+
+  // Start clipboard sync
+  final clipboardService = container.read(clipboardServiceProvider);
+  clipboardService.start();
+
+  // Start notification sync
+  final notificationService = container.read(notificationBridgeProvider);
+  await notificationService.start();
+
+  // Start file serving
+  final fileService = container.read(fileServiceProvider);
+  await fileService.start();
+
+  backgroundReceivePort.listen((message) {
+    if (message is Map<String, dynamic>) {
+      final command = message['command'];
+      if (command == 'CONNECT_TO') {
+        connectionManager.connectTo(
+          host: message['host'], 
+          port: message['port'] ?? TetherConstants.tcpPort,
+        );
+      }
+    }
+  });
 }

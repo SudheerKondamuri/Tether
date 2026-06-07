@@ -5,21 +5,9 @@ import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/widgets/tether_badge.dart';
 import 'package:tether/shared/widgets/tether_button.dart';
 import 'package:tether/shared/widgets/tether_text_field.dart';
-
-/// A clipboard entry for the local ring buffer.
-class ClipboardItem {
-  final String content;
-  final String dataType;
-  final String source;
-  final DateTime timestamp;
-
-  ClipboardItem({
-    required this.content,
-    required this.dataType,
-    required this.source,
-    required this.timestamp,
-  });
-}
+import 'package:tether/core/database/app_database.dart';
+import 'package:tether/core/database/database_provider.dart';
+import 'package:tether/core/services/clipboard_service.dart';
 
 /// Clipboard history screen — shows synced clipboard entries.
 class ClipboardScreen extends ConsumerStatefulWidget {
@@ -30,7 +18,6 @@ class ClipboardScreen extends ConsumerStatefulWidget {
 }
 
 class _ClipboardScreenState extends ConsumerState<ClipboardScreen> {
-  final List<ClipboardItem> _items = [];
   final _searchController = TextEditingController();
   String _filter = '';
   int? _selectedIndex;
@@ -43,94 +30,109 @@ class _ClipboardScreenState extends ConsumerState<ClipboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _items.where((item) {
-      if (_filter.isEmpty) return true;
-      return item.content.toLowerCase().contains(_filter.toLowerCase());
-    }).toList();
+    final historyAsync = ref.watch(clipboardHistoryProvider);
 
     return Container(
       color: TetherColors.backgroundBase,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ─── Header ───
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            child: Row(
-              children: [
-                const Text(
-                  'Clipboard',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: TetherColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TetherBadge(
-                  label: '${_items.length}',
-                  color: TetherColors.accentPrimary,
-                  isSmall: true,
-                ),
-                const Spacer(),
-                TetherButton(
-                  label: 'Clear All',
-                  variant: TetherButtonVariant.danger,
-                  isSmall: true,
-                  onPressed: _items.isEmpty
-                      ? null
-                      : () {
-                          setState(() {
-                            _items.clear();
-                            _selectedIndex = null;
-                          });
-                        },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+      child: historyAsync.when(
+        data: (items) {
+          final filtered = items.where((item) {
+            if (_filter.isEmpty) return true;
+            return item.content.toLowerCase().contains(_filter.toLowerCase());
+          }).toList();
 
-          // ─── Search ───
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: TetherTextField(
-              controller: _searchController,
-              hint: 'Search clipboard...',
-              prefixIcon: Icons.search,
-              onChanged: (val) => setState(() => _filter = val),
-            ),
-          ),
-          const SizedBox(height: 16),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ─── Header ───
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Clipboard',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: TetherColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TetherBadge(
+                      label: '${items.length}',
+                      color: TetherColors.accentPrimary,
+                      isSmall: true,
+                    ),
+                    const Spacer(),
+                    TetherButton(
+                      label: 'Clear All',
+                      variant: TetherButtonVariant.danger,
+                      isSmall: true,
+                      onPressed: items.isEmpty
+                          ? null
+                          : () {
+                              ref.read(databaseProvider).clearClipboardEntries();
+                              setState(() {
+                                _selectedIndex = null;
+                              });
+                            },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
 
-          // ─── List ───
-          Expanded(
-            child: filtered.isEmpty
-                ? _EmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final item = filtered[index];
-                      final isSelected = _selectedIndex == index;
-                      return _ClipboardTile(
-                        item: item,
-                        isSelected: isSelected,
-                        onTap: () =>
-                            setState(() => _selectedIndex = index),
-                        onCopy: () => _copyToClipboard(item.content),
-                        onDelete: () {
-                          setState(() {
-                            _items.remove(item);
-                            _selectedIndex = null;
-                          });
+              // ─── Search ───
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: TetherTextField(
+                  controller: _searchController,
+                  hint: 'Search clipboard...',
+                  prefixIcon: Icons.search,
+                  onChanged: (val) => setState(() => _filter = val),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ─── List ───
+              Expanded(
+                child: filtered.isEmpty
+                    ? _EmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final item = filtered[index];
+                          final isSelected = _selectedIndex == index;
+                          return _ClipboardTile(
+                            item: item,
+                            isSelected: isSelected,
+                            onTap: () =>
+                                setState(() => _selectedIndex = index),
+                            onCopy: () => _copyToClipboard(item.content),
+                            onDelete: () {
+                              ref.read(databaseProvider).deleteClipboardEntry(item.id);
+                              setState(() {
+                                _selectedIndex = null;
+                              });
+                            },
+                          );
                         },
-                      );
-                    },
-                  ),
+                      ),
+              ),
+            ],
+          );
+        },
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: TetherColors.accentPrimary),
+        ),
+        error: (err, _) => Center(
+          child: Text(
+            'Error: $err',
+            style: const TextStyle(color: TetherColors.accentDanger),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -148,7 +150,7 @@ class _ClipboardScreenState extends ConsumerState<ClipboardScreen> {
 }
 
 class _ClipboardTile extends StatefulWidget {
-  final ClipboardItem item;
+  final ClipboardEntry item;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onCopy;
@@ -230,7 +232,7 @@ class _ClipboardTileState extends State<_ClipboardTile> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          widget.item.source,
+                          widget.item.sourceDevice,
                           style: const TextStyle(
                             fontFamily: 'Inter',
                             fontSize: 11,
