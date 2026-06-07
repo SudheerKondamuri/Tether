@@ -166,5 +166,171 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               Expanded(
                 child: _StatCard(
                   label: 'Notifications',
+                  value: '0',
+                  icon: Icons.notifications_outlined,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
 
-}}
+          // ─── System Info ───
+          Text(
+            'SYSTEM',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          TetherCard(
+            child: Column(
+              children: [
+                _InfoRow(label: 'TCP Port', value: '${TetherConstants.tcpPort}', isMono: true),
+                _InfoRow(label: 'Database', value: TetherConstants.databaseName, isMono: true),
+                _InfoRow(label: 'Encryption', value: 'TLS 1.3'),
+                _InfoRow(label: 'Discovery', value: TetherConstants.mdnsServiceType, isMono: true),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _connectionLabel(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.connected:
+        return 'Connected';
+      case TetherConnectionState.connecting:
+        return 'Connecting...';
+      case TetherConnectionState.searching:
+        return 'Searching...';
+      case TetherConnectionState.disconnected:
+        return 'Disconnected';
+    }
+  }
+
+  Color _connectionColor(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.connected:
+        return TetherColors.accentSecondary;
+      case TetherConnectionState.connecting:
+      case TetherConnectionState.searching:
+        return TetherColors.accentPrimary;
+      case TetherConnectionState.disconnected:
+        return TetherColors.textDisabled;
+    }
+  }
+
+  ConnectionStatus _mapConnectionStatus(TetherConnectionState state) {
+    switch (state) {
+      case TetherConnectionState.connected:
+        return ConnectionStatus.connected;
+      case TetherConnectionState.connecting:
+      case TetherConnectionState.searching:
+        return ConnectionStatus.searching;
+      case TetherConnectionState.disconnected:
+        return ConnectionStatus.disconnected;
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final h = d.inHours.toString().padLeft(2, '0');
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TetherCard(
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: TetherColors.accentPrimary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: TetherColors.textSecondary,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontFamily: 'JetBrainsMono',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: TetherColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isMono;
+
+  const _InfoRow({
+    required this.label,
+    required this.value,
+    this.isMono = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 13,
+                color: TetherColors.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontFamily: isMono ? 'JetBrainsMono' : 'Inter',
+                fontSize: 13,
+                color: TetherColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
