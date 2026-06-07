@@ -7,10 +7,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
@@ -65,6 +69,32 @@ class ForegroundServicePlugin : Service() {
                         context.stopService(intent)
                         result.success(true)
                     }
+                    "isIgnoringBatteryOptimizations" -> {
+                        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                        val packageName = context.packageName
+                        val ignoring = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            pm.isIgnoringBatteryOptimizations(packageName)
+                        } else {
+                            true
+                        }
+                        result.success(ignoring)
+                    }
+                    "requestIgnoreBatteryOptimizations" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                            val packageName = context.packageName
+                            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                                result.success(true)
+                                return@setMethodCallHandler
+                            }
+                        }
+                        result.success(false)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -77,13 +107,8 @@ class ForegroundServicePlugin : Service() {
         initMulticastLock()
         registerNetworkTracking()
         
-        // Trigger initial network state check
-        val cm = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        @Suppress("DEPRECATION")
-        val activeNetwork = cm.activeNetworkInfo
-        @Suppress("DEPRECATION")
-        val isWifiConnected = activeNetwork != null && activeNetwork.type == ConnectivityManager.TYPE_WIFI
-        manageNetworkPipeline(enabled = isWifiConnected || isHotspotEnabled)
+        // Start the background engine unconditionally when service is created
+        triggerBackgroundDartIsolate()
     }
 
     private fun initMulticastLock() {
@@ -127,12 +152,10 @@ class ForegroundServicePlugin : Service() {
             if (multicastLock?.isHeld == false) {
                 multicastLock?.acquire()
             }
-            triggerBackgroundDartIsolate()
         } else {
             if (multicastLock?.isHeld == true) {
                 multicastLock?.release()
             }
-            teardownBackgroundDartIsolate()
         }
     }
 
@@ -142,6 +165,15 @@ class ForegroundServicePlugin : Service() {
         val loader = FlutterInjector.instance().flutterLoader()
         loader.ensureInitializationComplete(applicationContext, null)
         backgroundEngine = FlutterEngine(applicationContext)
+
+        // Register JniFlutterPlugin (required by path_provider_android JNI FFI bindings)
+        try {
+            val jniClass = Class.forName("com.github.dart_lang.jni_flutter.JniFlutterPlugin")
+            val jniPlugin = jniClass.getDeclaredConstructor().newInstance() as io.flutter.embedding.engine.plugins.FlutterPlugin
+            backgroundEngine?.plugins?.add(jniPlugin)
+        } catch (e: Exception) {
+            android.util.Log.e("Tether", "Failed to register JniFlutterPlugin: ${e.message}")
+        }
 
         // Manually register only the necessary plugins to save RAM
         try {
@@ -155,6 +187,13 @@ class ForegroundServicePlugin : Service() {
             val bonsoirPlugin = bonsoirClass.getDeclaredConstructor().newInstance() as io.flutter.embedding.engine.plugins.FlutterPlugin
             backgroundEngine?.plugins?.add(bonsoirPlugin)
         } catch (_: Exception) {}
+
+        // Register database synchronization plugin
+        try {
+            DatabaseSyncPlugin.register(backgroundEngine!!)
+        } catch (e: Exception) {
+            android.util.Log.e("Tether", "Failed to register DatabaseSyncPlugin: ${e.message}")
+        }
 
         // Register custom MethodChannel plugins on background engine
         val clipboardPlugin = ClipboardPlugin(applicationContext)
@@ -170,7 +209,10 @@ class ForegroundServicePlugin : Service() {
     }
 
     private fun teardownBackgroundDartIsolate() {
-        backgroundEngine?.destroy()
+        backgroundEngine?.let {
+            DatabaseSyncPlugin.unregister(it)
+            it.destroy()
+        }
         backgroundEngine = null
     }
 
@@ -181,6 +223,16 @@ class ForegroundServicePlugin : Service() {
         }
         teardownBackgroundDartIsolate()
         super.onDestroy()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Do NOT call stopSelf(). The service outlives the activity task stack.
+        // This is intentionally empty to prevent the default behavior of
+        // stopping the service when the user swipes the app from recents.
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -195,7 +247,14 @@ class ForegroundServicePlugin : Service() {
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotificationChannel() {
