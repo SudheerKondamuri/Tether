@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/constants.dart';
@@ -8,6 +9,7 @@ import 'package:tether/shared/widgets/tether_text_field.dart';
 import 'package:tether/shared/widgets/v2_locked_button.dart';
 import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/core/services/notification_bridge_service.dart';
+import 'package:tether/shared/platform_utils.dart';
 
 /// Settings screen with connection, pairing, modules, and app config.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -22,6 +24,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
   bool _notificationMirror = true;
   bool _notificationPermissionGranted = false;
   bool _autoConnect = true;
+  bool _ignoringBatteryOptimizations = true;
   final _ipController = TextEditingController();
   final _portController = TextEditingController(text: '${TetherConstants.tcpPort}');
 
@@ -30,6 +33,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkPermission();
+    _checkBatteryOptimization();
   }
 
   @override
@@ -44,7 +48,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPermission();
+      _checkBatteryOptimization();
     }
+  }
+
+  Future<void> _checkBatteryOptimization() async {
+    if (!PlatformUtils.isAndroid) return;
+    try {
+      const channel = MethodChannel(TetherConstants.foregroundServiceChannel);
+      final bool ignoring = await channel.invokeMethod('isIgnoringBatteryOptimizations');
+      if (mounted) {
+        setState(() {
+          _ignoringBatteryOptimizations = ignoring;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkPermission() async {
@@ -90,6 +108,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
                   value: _autoConnect,
                   onChanged: (v) => setState(() => _autoConnect = v),
                 ),
+                if (PlatformUtils.isAndroid) ...[
+                  const Divider(color: TetherColors.borderSubtle, height: 1),
+                  _ClickableRow(
+                    label: 'Battery Optimization Whitelist',
+                    description: _ignoringBatteryOptimizations
+                        ? 'Optimizations disabled (recommended)'
+                        : 'Tap to exempt from battery savings',
+                    onTap: () async {
+                      if (!_ignoringBatteryOptimizations) {
+                        const channel = MethodChannel(TetherConstants.foregroundServiceChannel);
+                        await channel.invokeMethod('requestIgnoreBatteryOptimizations');
+                      }
+                    },
+                    trailing: Icon(
+                      _ignoringBatteryOptimizations
+                          ? Icons.check_circle_rounded
+                          : Icons.warning_amber_rounded,
+                      color: _ignoringBatteryOptimizations
+                          ? TetherColors.accentSecondary
+                          : TetherColors.accentWarning,
+                    ),
+                  ),
+                ],
                 const Divider(
                     color: TetherColors.borderSubtle, height: 1),
                 Padding(
@@ -413,6 +454,60 @@ class _InfoRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ClickableRow extends StatelessWidget {
+  final String label;
+  final String description;
+  final VoidCallback onTap;
+  final Widget trailing;
+
+  const _ClickableRow({
+    required this.label,
+    required this.description,
+    required this.onTap,
+    required this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: TetherColors.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: const TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 12,
+                      color: TetherColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            trailing,
+          ],
+        ),
       ),
     );
   }
