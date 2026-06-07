@@ -227,10 +227,13 @@ void initDatabaseSync(AppDatabase db) {
   });
 
   // Listen to local updates and broadcast them
-  db.tableUpdates(const TableUpdateQuery.any()).listen((update) {
+  db.tableUpdates(const TableUpdateQuery.any()).listen((updates) {
     if (isApplyingExternalUpdate) return;
-    channel.invokeMethod('notifyTableUpdate', {
-      'tables': [update.table],
-    });
+    final tables = updates.map((u) => u.table).toList();
+    if (tables.isNotEmpty) {
+      channel.invokeMethod('notifyTableUpdate', {
+        'tables': tables,
+      });
+    }
   });
 }
