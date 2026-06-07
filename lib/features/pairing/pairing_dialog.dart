@@ -301,4 +301,305 @@ class _PairingScanDialogState extends ConsumerState<PairingScanDialog> {
   bool _isConnecting = false;
   MobileScannerController? _scannerController;
 
+  @override
+  void initState() {
+    super.initState();
+    _scannerController = MobileScannerController(
+      detectionSpeed: DetectionSpeed.noDuplicates,
+    );
+  }
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    _portController.dispose();
+    _pinController.dispose();
+    _scannerController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _connect() async {
+    final ip = _ipController.text.trim();
+    final port = int.tryParse(_portController.text.trim()) ?? TetherConstants.tcpPort;
+    if (ip.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid IP address.'),
+          backgroundColor: TetherColors.accentDanger,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isConnecting = true);
+
+    try {
+      final manager = ref.read(connectionManagerProvider);
+      final success = await manager.connectTo(host: ip, port: port);
+      
+      if (!mounted) return;
+      
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully paired and connected!'),
+            backgroundColor: TetherColors.accentSecondary,
+          ),
+        );
+        Navigator.of(context).pop();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connection failed. Please check IP and network.'),
+            backgroundColor: TetherColors.accentDanger,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: TetherColors.accentDanger,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final discoveredDevices = ref.watch(discoveredDevicesProvider).valueOrNull ?? [];
+
+    return Dialog(
+      backgroundColor: TetherColors.surfaceHigher,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Container(
+        width: 400,
+        padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Pair Device',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: TetherColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Scan QR code, enter IP manually, or select a discovered device.',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 13,
+                  color: TetherColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+
+              // ─── Camera Preview (MobileScanner) ───
+              Container(
+                width: 280,
+                height: 200,
+                decoration: BoxDecoration(
+                  color: TetherColors.backgroundBase,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: TetherColors.borderSubtle),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Stack(
+                    children: [
+                      MobileScanner(
+                        controller: _scannerController,
+                        onDetect: (capture) {
+                          final List<Barcode> barcodes = capture.barcodes;
+                          for (final barcode in barcodes) {
+                            final String? code = barcode.rawValue;
+                            if (code != null) {
+                              try {
+                                final Map<String, dynamic> data = jsonDecode(code);
+                                final String? ip = data[TetherConstants.qrKeyIp];
+                                final int? port = data[TetherConstants.qrKeyPort];
+                                final String? pin = data[TetherConstants.qrKeyPin];
+                                if (ip != null) {
+                                  setState(() {
+                                    _ipController.text = ip;
+                                    if (port != null) {
+                                      _portController.text = port.toString();
+                                    }
+                                    if (pin != null) {
+                                      _pinController.text = pin;
+                                    }
+                                  });
+                                  _connect();
+                                  break;
+                                }
+                              } catch (_) {
+                                // ignore bad QR codes
+                              }
+                            }
+                          }
+                        },
+                      ),
+                      // Overlay aiming reticle
+                      Center(
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: TetherColors.accentPrimary.withAlpha(150),
+                              width: 2,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ─── Discovered Devices Section ───
+              if (discoveredDevices.isNotEmpty) ...[
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'DISCOVERED DEVICES',
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: TetherColors.textSecondary,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 100),
+                  decoration: BoxDecoration(
+                    color: TetherColors.backgroundBase,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: TetherColors.borderSubtle),
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: discoveredDevices.length,
+                    itemBuilder: (context, index) {
+                      final dev = discoveredDevices[index];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        leading: const Icon(Icons.devices, size: 16, color: TetherColors.accentSecondary),
+                        title: Text(
+                          dev.name,
+                          style: const TextStyle(fontSize: 13, color: TetherColors.textPrimary),
+                        ),
+                        subtitle: Text(
+                          '${dev.ip}:${dev.port}',
+                          style: TetherTheme.monoSmall.copyWith(fontSize: 11),
+                        ),
+                        onTap: () {
+                          setState(() {
+                            _ipController.text = dev.ip;
+                            _portController.text = dev.port.toString();
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // ─── Manual Input ───
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'OR ENTER MANUALLY',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: TetherColors.textSecondary,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TetherTextField(
+                      controller: _ipController,
+                      hint: 'IP address',
+                      isMonospace: true,
+                      prefixIcon: Icons.wifi,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 90,
+                    child: TetherTextField(
+                      controller: _portController,
+                      hint: 'Port',
+                      isMonospace: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TetherTextField(
+                controller: _pinController,
+                hint: '6-digit PIN (optional)',
+                isMonospace: true,
+                prefixIcon: Icons.pin,
+              ),
+              const SizedBox(height: 20),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TetherButton(
+                    label: 'Cancel',
+                    variant: TetherButtonVariant.ghost,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_isConnecting)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: TetherColors.accentPrimary,
+                        ),
+                      ),
+                    )
+                  else
+                    TetherButton(
+                      label: 'Connect',
+                      onPressed: _connect,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
