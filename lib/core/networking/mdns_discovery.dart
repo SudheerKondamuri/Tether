@@ -3,10 +3,45 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:bonsoir/bonsoir.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/constants.dart';
 import 'package:tether/shared/platform_utils.dart';
 import 'package:tether/core/database/database_provider.dart';
+import 'package:tether/core/networking/tls_manager.dart';
+
+/// Rotating cryptographic hashes for secure peer identification.
+class CryptoUtils {
+  /// Compute a discovery hash for a given cert fingerprint.
+  /// Uses 5-minute time-epoch salt so the hash rotates every 5 minutes.
+  static String computeDiscoveryHash(String certFingerprint) {
+    final epoch = DateTime.now().millisecondsSinceEpoch ~/ (5 * 60 * 1000);
+    final input = '$certFingerprint:$epoch';
+    return sha256.convert(utf8.encode(input)).toString().substring(0, 16);
+  }
+
+  /// Verify if a received hash matches any of the given cert fingerprints.
+  /// Checks both current and previous time epochs to handle clock boundary.
+  static String? verifyDiscoveryHash(
+      String receivedHash, List<String> knownFingerprints) {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final currentEpoch = nowMs ~/ (5 * 60 * 1000);
+    final previousEpoch = currentEpoch - 1;
+
+    for (final fp in knownFingerprints) {
+      final currentInput = '$fp:$currentEpoch';
+      final currentHash =
+          sha256.convert(utf8.encode(currentInput)).toString().substring(0, 16);
+      if (currentHash == receivedHash) return fp;
+
+      final prevInput = '$fp:$previousEpoch';
+      final prevHash =
+          sha256.convert(utf8.encode(prevInput)).toString().substring(0, 16);
+      if (prevHash == receivedHash) return fp;
+    }
+    return null;
+  }
+}
 
 /// A discovered Tether device on the local network.
 class DiscoveredDevice {
@@ -14,6 +49,7 @@ class DiscoveredDevice {
   final String ip;
   final int port;
   final int nonce;
+  final String? discoveryHash;
   final DateTime discoveredAt;
 
   DiscoveredDevice({
@@ -21,6 +57,7 @@ class DiscoveredDevice {
     required this.ip,
     required this.port,
     required this.nonce,
+    this.discoveryHash,
     DateTime? discoveredAt,
   }) : discoveredAt = discoveredAt ?? DateTime.now();
 
@@ -39,6 +76,7 @@ class DiscoveredDevice {
         'ip': ip,
         'port': port,
         'nonce': nonce,
+        'discoveryHash': discoveryHash,
         'discoveredAt': discoveredAt.toIso8601String(),
       };
 
@@ -48,6 +86,7 @@ class DiscoveredDevice {
       ip: json['ip'] as String,
       port: json['port'] as int,
       nonce: json['nonce'] as int,
+      discoveryHash: json['discoveryHash'] as String?,
       discoveredAt: json['discoveredAt'] != null
           ? DateTime.parse(json['discoveredAt'] as String)
           : null,
@@ -79,6 +118,17 @@ class MdnsDiscovery {
   List<DiscoveredDevice> get devices => _discovered.toList();
 
   MdnsDiscovery({required this.ref});
+
+  String? _ownCertFingerprint;
+
+  /// Compute our own discovery hash for broadcasting.
+  Future<String?> _getOwnDiscoveryHash() async {
+    if (_ownCertFingerprint == null) {
+      final (certPath, _) = await TlsManager.ensureCertificate();
+      _ownCertFingerprint = await TlsManager.fingerprint(certPath);
+    }
+    return CryptoUtils.computeDiscoveryHash(_ownCertFingerprint!);
+  }
 
   void resetSilenceCounter() {
     _consecutiveSilenceCycles = 0;
@@ -113,6 +163,8 @@ class MdnsDiscovery {
   }) async {
     await stopBroadcast();
 
+    final discoveryHash = await _getOwnDiscoveryHash();
+
     // ─── mDNS Broadcast ───
     try {
       final service = BonsoirService(
@@ -121,6 +173,7 @@ class MdnsDiscovery {
         port: port,
         attributes: {
           'nonce': discoverySessionNonce.toString(),
+          if (discoveryHash != null) 'dh': discoveryHash,
         },
       );
 
@@ -140,8 +193,10 @@ class MdnsDiscovery {
           if (datagram != null) {
             final text = String.fromCharCodes(datagram.data);
             if (text.startsWith("TETHER_DISCOVER:")) {
-              final reply = "TETHER_REPLY:$deviceName:$port:$discoverySessionNonce";
-              _udpListenerSocket!.send(reply.codeUnits, datagram.address, datagram.port);
+              _getOwnDiscoveryHash().then((hash) {
+                final reply = "TETHER_REPLY:$deviceName:$port:$discoverySessionNonce:${hash ?? ''}"; 
+                _udpListenerSocket!.send(reply.codeUnits, datagram.address, datagram.port);
+              });
             }
           }
         }
@@ -178,11 +233,13 @@ class MdnsDiscovery {
           final resolved = event.service as ResolvedBonsoirService;
           final nonceStr = resolved.attributes['nonce'] ?? '0';
           final nonce = int.tryParse(nonceStr) ?? 0;
+          final discoveryHash = resolved.attributes['dh'];
           final device = DiscoveredDevice(
             name: resolved.name,
             ip: resolved.host ?? '',
             port: resolved.port,
             nonce: nonce,
+            discoveryHash: discoveryHash,
           );
           if (device.ip.isNotEmpty) {
             resetSilenceCounter();
@@ -227,11 +284,15 @@ class MdnsDiscovery {
                 final name = parts[1];
                 final port = int.tryParse(parts[2]) ?? TetherConstants.tcpPort;
                 final nonce = int.tryParse(parts[3]) ?? 0;
+                final discoveryHash = parts.length >= 5 && parts[4].isNotEmpty
+                    ? parts[4]
+                    : null;
                 final device = DiscoveredDevice(
                   name: name,
                   ip: datagram.address.address,
                   port: port,
                   nonce: nonce,
+                  discoveryHash: discoveryHash,
                 );
                 resetSilenceCounter();
                 _discovered.add(device);
