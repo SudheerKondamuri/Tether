@@ -65,6 +65,7 @@
         <service
             android:name=".ForegroundServicePlugin"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="connectedDevice"/>
 
         <meta-data
