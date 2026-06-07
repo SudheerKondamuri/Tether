@@ -13,6 +13,8 @@ import 'package:tether/core/services/file_service.dart';
 import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/core/networking/mdns_discovery.dart';
 import 'package:tether/shared/constants.dart';
+import 'package:tether/core/database/app_database.dart';
+import 'package:tether/core/database/database_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -92,7 +94,10 @@ class _TetherAppState extends ConsumerState<TetherApp> {
 void backgroundMain() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  AppDatabase.isBackground = true;
+  
   final container = ProviderContainer();
+  
   final ReceivePort backgroundReceivePort = ReceivePort();
   
   // Expose memory port across isolates
