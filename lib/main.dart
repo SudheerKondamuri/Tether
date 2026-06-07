@@ -97,6 +97,8 @@ void backgroundMain() async {
   AppDatabase.isBackground = true;
   
   final container = ProviderContainer();
+  // Eagerly initialize database and sync channels
+  container.read(databaseProvider);
   
   final ReceivePort backgroundReceivePort = ReceivePort();
   
