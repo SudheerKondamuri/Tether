@@ -31,7 +31,17 @@ class HttpFileServer {
         .addMiddleware(logRequests())
         .addHandler(router.call);
 
-    _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
+    int retries = 0;
+    while (retries < 5) {
+      try {
+        _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
+        break;
+      } catch (e) {
+        retries++;
+        if (retries >= 5) rethrow;
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
   }
 
   /// Set the shared directory for file listing/serving.
