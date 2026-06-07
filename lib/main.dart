@@ -36,5 +36,42 @@ class _TetherAppState extends ConsumerState<TetherApp> {
   Future<void> _initServices() async {
     // Start connection manager (TCP server)
     final connectionManager = ref.read(connectionManagerProvider);
+    await connectionManager.startServer();
 
-}}
+    // Start clipboard sync
+    final clipboardService = ref.read(clipboardServiceProvider);
+    clipboardService.start();
+
+    // Start notification sync
+    final notificationService = ref.read(notificationBridgeProvider);
+    await notificationService.start();
+
+    // Start file serving
+    final fileService = ref.read(fileServiceProvider);
+    await fileService.start();
+
+    // Start mDNS broadcast and discovery
+    final mdns = ref.read(mdnsDiscoveryProvider);
+    await mdns.startBroadcast(
+      deviceName: connectionManager.deviceName,
+      port: TetherConstants.tcpPort,
+    );
+    await mdns.startDiscovery();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Tether',
+      debugShowCheckedModeBanner: false,
+      theme: TetherTheme.darkTheme,
+      home: PlatformUtils.platformWidget(
+        linux: () => const LinuxShell(),
+        android: () => const AndroidShell(),
+        // Future: windows: () => const WindowsShell(),
+        // Future: macos: () => const MacShell(),
+        fallback: () => const LinuxShell(),
+      ),
+    );
+  }
+}
