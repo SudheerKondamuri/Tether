@@ -3,7 +3,9 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:flutter/services.dart';
 import 'package:tether/shared/constants.dart';
+import 'package:tether/shared/platform_utils.dart';
 import 'package:tether/core/database/tables.dart';
 
 part 'app_database.g.dart';
@@ -17,8 +19,9 @@ part 'app_database.g.dart';
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
-
   AppDatabase.forTesting(super.e);
+
+  static bool isBackground = false;
 
   @override
   int get schemaVersion => 1;
@@ -191,5 +194,43 @@ LazyDatabase _openConnection() {
         rawDb.execute('PRAGMA synchronous=NORMAL;');
       },
     );
+  });
+}
+
+void initDatabaseSync(AppDatabase db) {
+  if (!PlatformUtils.isAndroid) return;
+
+  const channel = MethodChannel('com.tether/db_sync');
+  bool isApplyingExternalUpdate = false;
+
+  // Listen for table updates from other isolate
+  channel.setMethodCallHandler((call) async {
+    if (call.method == 'onTableUpdate') {
+      final List<dynamic>? tables = call.arguments['tables'];
+      if (tables != null) {
+        final tableInfos = db.allTables
+            .where((t) => tables.contains(t.actualTableName))
+            .toSet();
+        if (tableInfos.isNotEmpty) {
+          isApplyingExternalUpdate = true;
+          try {
+            db.notifyUpdates(
+                tableInfos.map((t) => TableUpdate.onTable(t)).toSet());
+          } catch (_) {
+            // Ignore/Suppress
+          } finally {
+            isApplyingExternalUpdate = false;
+          }
+        }
+      }
+    }
+  });
+
+  // Listen to local updates and broadcast them
+  db.tableUpdates(const TableUpdateQuery.any()).listen((update) {
+    if (isApplyingExternalUpdate) return;
+    channel.invokeMethod('notifyTableUpdate', {
+      'tables': [update.table],
+    });
   });
 }
