@@ -4,6 +4,7 @@ import 'package:tether/core/database/app_database.dart';
 /// Singleton database instance provider.
 final databaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase();
+  initDatabaseSync(db);
   ref.onDispose(() => db.close());
   return db;
 });
