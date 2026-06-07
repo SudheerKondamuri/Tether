@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:ui';
+import 'package:crypto/crypto.dart';
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:tether/core/networking/tcp_server.dart';
@@ -11,6 +13,7 @@ import 'package:tether/core/networking/packet_protocol.dart';
 import 'package:tether/shared/constants.dart';
 import 'package:tether/shared/platform_utils.dart';
 import 'package:tether/core/database/database_provider.dart';
+import 'package:tether/core/database/app_database.dart';
 import 'package:tether/core/networking/mdns_discovery.dart';
 
 /// Represents a connected peer device.
@@ -124,16 +127,22 @@ class ConnectionManager {
         return;
       }
       for (final device in devices) {
-        evaluateDiscoveredPeer(device.name, device.ip, device.port, device.nonce);
+        evaluateDiscoveredPeer(device.name, device.ip, device.port, device.nonce, device.discoveryHash);
       }
     });
   }
 
-  void evaluateDiscoveredPeer(String peerName, String host, int port, int peerNonce) {
+  void evaluateDiscoveredPeer(String peerName, String host, int port, int peerNonce, String? discoveryHash) {
     final mdns = ref.read(mdnsDiscoveryProvider);
     final myNonce = mdns.discoverySessionNonce;
 
     if (myNonce == peerNonce) return; // Self detection protection
+
+    // If peer broadcasts a discovery hash, check if it matches a known paired device
+    if (discoveryHash != null && discoveryHash.isNotEmpty) {
+      _tryAutoConnect(host, port, peerNonce, discoveryHash);
+      return;
+    }
 
     if (myNonce > peerNonce) {
       // Deterministic Client assignment
@@ -141,6 +150,24 @@ class ConnectionManager {
     } else {
       // Deterministic Server lock -- yields execution path to let inbound socket attach cleanly
       developer.log("Yielding connection initialization role to peer node: $peerName");
+    }
+  }
+
+  Future<void> _tryAutoConnect(String host, int port, int peerNonce, String discoveryHash) async {
+    final db = ref.read(databaseProvider);
+    final pairedDevices = await db.getPairedDevices();
+    final knownFingerprints = pairedDevices.map((d) => d.certFingerprint).toList();
+
+    final matchedFp = CryptoUtils.verifyDiscoveryHash(discoveryHash, knownFingerprints);
+    if (matchedFp != null) {
+      developer.log('Auto-connecting to paired device (fingerprint match: ${matchedFp.substring(0, 8)}...)');
+      final mdns = ref.read(mdnsDiscoveryProvider);
+      final myNonce = mdns.discoverySessionNonce;
+      if (myNonce > peerNonce) {
+        connectTo(host: host, port: port);
+      } else {
+        developer.log('Yielding auto-connect role to peer');
+      }
     }
   }
 
@@ -237,6 +264,9 @@ class ConnectionManager {
       _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
 
+      // Extract peer's TLS certificate fingerprint and store pairing record
+      _storePairingRecord(packet.deviceId, hs.name, hs.platform, socket.peerCertificate, socket.remoteAddress.address, socket.remotePort);
+
       // Send our handshake back
       _server.broadcast(Packet(
         type: PacketType.handshake,
@@ -274,6 +304,13 @@ class ConnectionManager {
       _peerController.add(_peer);
       _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
+
+      // Extract peer's TLS certificate fingerprint and store pairing record
+      _storePairingRecord(
+        packet.deviceId, hs.name, hs.platform,
+        _client.socket?.peerCertificate,
+        _client.host ?? '', _client.port ?? TetherConstants.tcpPort,
+      );
     } else if (packet.type == PacketType.heartbeat) {
       final hb = HeartbeatPayload.fromJson(packet.payload);
       if (_peer != null) {
@@ -286,6 +323,31 @@ class ConnectionManager {
     }
 
     _packetController.add(packet);
+  }
+
+  /// Store or update a pairing record from the TLS handshake certificate.
+  void _storePairingRecord(
+    String peerDeviceId, String peerName, String peerPlatform,
+    X509Certificate? cert, String ip, int port,
+  ) {
+    if (cert == null) return;
+    final pem = cert.pem;
+    final fingerprint = sha256.convert(cert.der).bytes
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join(':');
+    
+    final db = ref.read(databaseProvider);
+    db.upsertPairedDevice(PairedDevicesCompanion(
+      deviceId: Value(peerDeviceId),
+      name: Value(peerName),
+      platform: Value(peerPlatform),
+      certPem: Value(pem),
+      certFingerprint: Value(fingerprint),
+      lastIp: Value(ip),
+      lastPort: Value(port),
+      pairedAt: Value(DateTime.now()),
+    ));
+    developer.log('Stored pairing record for $peerName ($peerDeviceId)');
   }
 
   /// Send a packet to the connected peer.
