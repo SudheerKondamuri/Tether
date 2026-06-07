@@ -90,6 +90,22 @@ class MdnsDiscovery {
     db.setSetting('discovered_devices', jsonStr);
   }
 
+  Future<RawDatagramSocket?> _bindUdpWithRetry(InternetAddress address, int port) async {
+    int retries = 0;
+    while (retries < 5) {
+      try {
+        final socket = await RawDatagramSocket.bind(address, port);
+        socket.broadcastEnabled = true;
+        return socket;
+      } catch (e) {
+        retries++;
+        if (retries >= 5) rethrow;
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+    return null;
+  }
+
   /// Start broadcasting this device as a Tether service (mDNS + UDP).
   Future<void> startBroadcast({
     required String deviceName,
@@ -117,8 +133,8 @@ class MdnsDiscovery {
 
     // ─── UDP Broadcast Listener ───
     try {
-      _udpListenerSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 5281);
-      _udpListenerSocket!.listen((event) {
+      _udpListenerSocket = await _bindUdpWithRetry(InternetAddress.anyIPv4, 5281);
+      _udpListenerSocket?.listen((event) {
         if (event == RawSocketEvent.read) {
           final datagram = _udpListenerSocket!.receive();
           if (datagram != null) {
@@ -188,8 +204,7 @@ class MdnsDiscovery {
 
     // ─── UDP Broadcast Discovery ───
     try {
-      _udpDiscoverySocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
-      _udpDiscoverySocket!.broadcastEnabled = true;
+      _udpDiscoverySocket = await _bindUdpWithRetry(InternetAddress.anyIPv4, 0);
 
       _udpPingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
         final ping = "TETHER_DISCOVER:$discoverySessionNonce";
