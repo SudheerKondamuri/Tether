@@ -163,6 +163,7 @@ class ForegroundServicePlugin : Service() {
 
         val entrypoint = DartExecutor.DartEntrypoint(
             loader.findAppBundlePath(),
+            "lib/main.dart",
             "backgroundMain"
         )
         backgroundEngine?.dartExecutor?.executeDartEntrypoint(entrypoint)
