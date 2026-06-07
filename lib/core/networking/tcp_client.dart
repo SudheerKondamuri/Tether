@@ -16,6 +16,7 @@ class TcpClient {
   String _deviceId = '';
   String? _trustedCertPem;
 
+  SecureSocket? get socket => _socket;
   bool get isConnected => _socket != null;
   String? get host => _host;
   int? get port => _port;
