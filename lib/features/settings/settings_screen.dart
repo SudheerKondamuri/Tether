@@ -194,7 +194,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
                     onTap: () async {
                       const channel = MethodChannel(TetherConstants.foregroundServiceChannel);
                       final bool opened = await channel.invokeMethod('openAutostartSettings');
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       if (!opened) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
