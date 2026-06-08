@@ -1,5 +1,3 @@
-import 'dart:isolate';
-import 'dart:ui';
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
@@ -15,11 +13,17 @@ import 'package:tether/core/services/file_service.dart';
 import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/core/networking/mdns_discovery.dart';
 import 'package:tether/shared/constants.dart';
-import 'package:tether/core/database/app_database.dart';
 import 'package:tether/core/database/database_provider.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize database before anything else.
+  // On Android, this polls for the background DriftIsolate server
+  // (kicking the foreground service if needed) and connects as a client.
+  // On Desktop, this opens a direct single-process NativeDatabase.
+  await initDatabase();
+
   runApp(const ProviderScope(child: TetherApp()));
 }
 
@@ -42,9 +46,9 @@ class _TetherAppState extends ConsumerState<TetherApp> {
 
   Future<void> _initServices() async {
     if (PlatformUtils.isAndroid) {
-      // Start foreground service on Android UI startup
-      const MethodChannel(TetherConstants.foregroundServiceChannel)
-          .invokeMethod('startService');
+      // On Android, the foreground service is already running (started during
+      // initDatabase cold-start polling). The background Dart engine handles
+      // all networking. The UI process only reads state from the shared DB.
       return;
     }
 
@@ -91,30 +95,23 @@ class _TetherAppState extends ConsumerState<TetherApp> {
   }
 }
 
-// Separate Headless Engine Entrypoint
+// ─── Headless Background Engine Entrypoint ───
+
 @pragma('vm:entry-point')
 void backgroundMain() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  AppDatabase.isBackground = true;
-  
+
+  // Initialize the DriftIsolate server — this isolate owns the database file.
+  // The UI isolate will find the connect port via IsolateNameServer.
+  await initDatabase(isBackground: true);
+
   final container = ProviderContainer();
-  // Eagerly initialize database and sync channels
-  container.read(databaseProvider);
-  
-  final ReceivePort backgroundReceivePort = ReceivePort();
-  
-  // Expose memory port across isolates
-  IsolateNameServer.registerPortWithName(
-    backgroundReceivePort.sendPort, 
-    'tether_background_rpc'
-  );
 
   // Initialize network stack scoped exclusively inside background engine
   final connectionManager = container.read(connectionManagerProvider);
   final mdns = container.read(mdnsDiscoveryProvider);
 
-  // Mark this as the background isolate
+  // Mark this as the background isolate for routing decisions
   ConnectionManager.isBackgroundIsolate = true;
 
   await connectionManager.init();
@@ -137,18 +134,7 @@ void backgroundMain() async {
   final fileService = container.read(fileServiceProvider);
   await fileService.start();
 
-  backgroundReceivePort.listen((message) {
-    if (message is Map<String, dynamic>) {
-      final command = message['command'];
-      if (command == 'CONNECT_TO') {
-        connectionManager.connectTo(
-          host: message['host'], 
-          port: message['port'] ?? TetherConstants.tcpPort,
-        );
-      }
-    }
-  });
-
+  // MethodChannel command handler for cross-isolate commands from UI
   const MethodChannel(TetherConstants.foregroundServiceChannel)
       .setMethodCallHandler((call) async {
     if (call.method == 'onBackgroundCommand') {
@@ -172,7 +158,9 @@ void backgroundMain() async {
     }
   });
 
-  // Periodically run passive checkpoint on the SQLite database to prevent WAL file bloat.
+  // Periodically run passive checkpoint on the SQLite database to prevent
+  // WAL file bloat. The DriftIsolate server handles the actual DB writes,
+  // but the checkpoint pragma is safe to issue from any client.
   Timer.periodic(const Duration(minutes: 30), (_) async {
     try {
       final db = container.read(databaseProvider);
