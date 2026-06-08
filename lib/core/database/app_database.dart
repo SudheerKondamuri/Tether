@@ -192,6 +192,7 @@ LazyDatabase _openConnection() {
       setup: (rawDb) {
         rawDb.execute('PRAGMA journal_mode=WAL;');
         rawDb.execute('PRAGMA synchronous=NORMAL;');
+        rawDb.execute('PRAGMA cache_size=0;'); // Prevent cross-process stale reads
       },
     );
   });
