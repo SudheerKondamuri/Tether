@@ -286,18 +286,20 @@ class ForegroundServicePlugin : Service() {
         val loader = FlutterInjector.instance().flutterLoader()
         loader.startInitialization(applicationContext)
         loader.ensureInitializationComplete(applicationContext, null)
-        backgroundEngine = FlutterEngine(applicationContext)
+        
+        // automaticallyRegisterPlugins = false to avoid conflicts with
+        // plugins already registered on the main activity engine in the
+        // same process.
+        backgroundEngine = FlutterEngine(applicationContext, null, false)
 
-        // Register JniFlutterPlugin (required by path_provider_android JNI FFI bindings)
+        // Manually register only the plugins needed by the background isolate.
+        // Wrap in try-catch since some may already be registered in this process.
         try {
             val jniClass = Class.forName("com.github.dart_lang.jni_flutter.JniFlutterPlugin")
             val jniPlugin = jniClass.getDeclaredConstructor().newInstance() as io.flutter.embedding.engine.plugins.FlutterPlugin
             backgroundEngine?.plugins?.add(jniPlugin)
-        } catch (e: Exception) {
-            android.util.Log.e("Tether", "Failed to register JniFlutterPlugin: ${e.message}")
-        }
+        } catch (_: Exception) {}
 
-        // Manually register only the necessary plugins to save RAM
         try {
             val pathProviderClass = Class.forName("dev.flutter.plugins.pathprovider.PathProviderPlugin")
             val pathProviderPlugin = pathProviderClass.getDeclaredConstructor().newInstance() as io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -315,9 +317,12 @@ class ForegroundServicePlugin : Service() {
         clipboardPlugin.register(backgroundEngine!!)
         NotificationPlugin.register(backgroundEngine!!, applicationContext)
 
+        // Use 2-parameter DartEntrypoint — auto-resolves the default library.
+        // The 3-parameter version with "lib/main.dart" fails in same-process
+        // mode because the shared Dart VM registers libraries under package URIs
+        // (package:tether/main.dart), not raw file paths.
         val entrypoint = DartExecutor.DartEntrypoint(
             loader.findAppBundlePath(),
-            "lib/main.dart",
             "backgroundMain"
         )
         backgroundEngine?.dartExecutor?.executeDartEntrypoint(entrypoint)
