@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/services.dart';
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -203,14 +204,19 @@ class ConnectionManager {
     int port = TetherConstants.tcpPort,
   }) async {
     if (PlatformUtils.isAndroid && !isBackgroundIsolate) {
-      final backgroundPort = IsolateNameServer.lookupPortByName('tether_background_rpc');
-      if (backgroundPort != null) {
-        backgroundPort.send({
+      try {
+        await const MethodChannel(TetherConstants.foregroundServiceChannel)
+            .invokeMethod('sendBackgroundCommand', {
           'command': 'CONNECT_TO',
-          'host': host,
-          'port': port,
+          'args': {
+            'host': host,
+            'port': port,
+          },
         });
         return true;
+      } catch (e) {
+        developer.log('Failed to delegate connectTo to background service: $e');
+        return false;
       }
     }
 
