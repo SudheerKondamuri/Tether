@@ -284,6 +284,7 @@ class ForegroundServicePlugin : Service() {
         if (backgroundEngine != null) return
         
         val loader = FlutterInjector.instance().flutterLoader()
+        loader.startInitialization(applicationContext)
         loader.ensureInitializationComplete(applicationContext, null)
         backgroundEngine = FlutterEngine(applicationContext)
 
