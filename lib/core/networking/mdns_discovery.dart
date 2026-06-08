@@ -107,7 +107,11 @@ class MdnsDiscovery {
   RawDatagramSocket? _udpListenerSocket;
   RawDatagramSocket? _udpDiscoverySocket;
   Timer? _udpPingTimer;
+  Timer? _staleCleanupTimer;
   int _consecutiveSilenceCycles = 0;
+
+  String? _currentBroadcastName;
+  int _currentBroadcastPort = TetherConstants.tcpPort;
 
   final _devicesController =
       StreamController<List<DiscoveredDevice>>.broadcast();
@@ -135,9 +139,13 @@ class MdnsDiscovery {
   }
 
   void _updateDevicesInSettings() {
-    final db = ref.read(databaseProvider);
-    final jsonStr = jsonEncode(_discovered.map((d) => d.toJson()).toList());
-    db.setSetting('discovered_devices', jsonStr);
+    try {
+      final db = ref.read(databaseProvider);
+      final jsonStr = jsonEncode(_discovered.map((d) => d.toJson()).toList());
+      db.setSetting('discovered_devices', jsonStr);
+    } catch (_) {
+      // Container may be disposed during shutdown — safe to ignore.
+    }
   }
 
   Future<RawDatagramSocket?> _bindUdpWithRetry(InternetAddress address, int port) async {
@@ -162,6 +170,9 @@ class MdnsDiscovery {
     int port = TetherConstants.tcpPort,
   }) async {
     await stopBroadcast();
+
+    _currentBroadcastName = deviceName;
+    _currentBroadcastPort = port;
 
     final discoveryHash = await _getOwnDiscoveryHash();
 
@@ -259,6 +270,19 @@ class MdnsDiscovery {
       await _discovery!.start();
     } catch (_) {}
 
+    // ─── Stale Device Cleanup ───
+    // Remove discovered devices that haven't re-announced in 30 seconds.
+    _staleCleanupTimer?.cancel();
+    _staleCleanupTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      final cutoff = DateTime.now().subtract(const Duration(seconds: 30));
+      final before = _discovered.length;
+      _discovered.removeWhere((d) => d.discoveredAt.isBefore(cutoff));
+      if (_discovered.length != before) {
+        _devicesController.add(_discovered.toList());
+        _updateDevicesInSettings();
+      }
+    });
+
     // ─── UDP Broadcast Discovery ───
     try {
       _udpDiscoverySocket = await _bindUdpWithRetry(InternetAddress.anyIPv4, 0);
@@ -344,11 +368,25 @@ class MdnsDiscovery {
     _udpPingTimer?.cancel();
     _udpPingTimer = null;
 
+    _staleCleanupTimer?.cancel();
+    _staleCleanupTimer = null;
+
     _udpDiscoverySocket?.close();
     _udpDiscoverySocket = null;
 
     _discovered.clear();
     _updateDevicesInSettings();
+  }
+
+  /// Force a fresh re-announcement. Call after a disconnect event to ensure
+  /// peers see us with an updated nonce/hash immediately.
+  Future<void> refreshBroadcast() async {
+    if (_currentBroadcastName != null) {
+      await startBroadcast(
+        deviceName: _currentBroadcastName!,
+        port: _currentBroadcastPort,
+      );
+    }
   }
 
   /// Stop everything and clean up.
