@@ -53,7 +53,6 @@
         <!-- Notification Listener Service -->
         <service
             android:name=".NotificationPlugin"
-            android:process=":background"
             android:exported="true"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
@@ -71,7 +70,6 @@
         <!-- Foreground Service for persistent TCP -->
         <service
             android:name=".ForegroundServicePlugin"
-            android:process=":background"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="connectedDevice"/>
