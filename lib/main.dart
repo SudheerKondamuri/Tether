@@ -149,6 +149,27 @@ void backgroundMain() async {
     }
   });
 
+  const MethodChannel(TetherConstants.foregroundServiceChannel)
+      .setMethodCallHandler((call) async {
+    if (call.method == 'onBackgroundCommand') {
+      final args = call.arguments;
+      if (args is Map) {
+        final command = args['command'];
+        final commandArgs = args['args'];
+        if (command == 'CONNECT_TO' && commandArgs is Map) {
+          final host = commandArgs['host'];
+          final port = commandArgs['port'];
+          if (host != null) {
+            connectionManager.connectTo(
+              host: host as String,
+              port: (port as int?) ?? TetherConstants.tcpPort,
+            );
+          }
+        }
+      }
+    }
+  });
+
   // Periodically run passive checkpoint on the SQLite database to prevent WAL file bloat.
   Timer.periodic(const Duration(minutes: 30), (_) async {
     try {
