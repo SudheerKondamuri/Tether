@@ -4,22 +4,22 @@ import 'package:tether/core/networking/packet_protocol.dart';
 import 'package:tether/shared/constants.dart';
 
 /// Outgoing TLS TCP client that connects to a peer.
+/// This is a pure transport layer — no reconnect policy.
+/// Reconnection is owned exclusively by ConnectionManager.
 class TcpClient {
   SecureSocket? _socket;
   final PacketCodec _codec = PacketCodec();
   Timer? _heartbeatTimer;
-  Timer? _reconnectTimer;
-  int _reconnectAttempts = 0;
 
   String? _host;
   int? _port;
   String _deviceId = '';
-  String? _trustedCertPem;
 
   SecureSocket? get socket => _socket;
   bool get isConnected => _socket != null;
   String? get host => _host;
   int? get port => _port;
+  String get deviceId => _deviceId;
 
   /// Callback when a packet is received.
   void Function(Packet packet)? onPacket;
@@ -38,7 +38,6 @@ class TcpClient {
     _host = host;
     _port = port;
     _deviceId = deviceId;
-    _trustedCertPem = trustedCertPem;
 
     try {
       _socket = await SecureSocket.connect(
@@ -52,7 +51,6 @@ class TcpClient {
         timeout: const Duration(seconds: 10),
       );
 
-      _reconnectAttempts = 0;
       _codec.reset();
 
       _socket!.listen(
@@ -99,29 +97,7 @@ class TcpClient {
     _socket = null;
     _codec.reset();
     onConnectionChanged?.call(false);
-    _scheduleReconnect();
-  }
-
-  void _scheduleReconnect() {
-    if (_host == null || _port == null) return;
-    if (_reconnectAttempts >= TetherConstants.maxReconnectAttempts) return;
-
-    _reconnectAttempts++;
-    final delay = Duration(
-      seconds: TetherConstants.reconnectDelay.inSeconds * _reconnectAttempts,
-    );
-
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(delay, () {
-      if (_host != null && _port != null) {
-        connect(
-          host: _host!,
-          port: _port!,
-          deviceId: _deviceId,
-          trustedCertPem: _trustedCertPem,
-        );
-      }
-    });
+    // No reconnect scheduling — ConnectionManager is the sole policy owner.
   }
 
   /// Send a packet to the connected peer.
@@ -131,9 +107,7 @@ class TcpClient {
 
   /// Gracefully disconnect.
   Future<void> disconnect() async {
-    _reconnectTimer?.cancel();
     _heartbeatTimer?.cancel();
-    _reconnectAttempts = TetherConstants.maxReconnectAttempts; // prevent reconnect
 
     if (_socket != null) {
       send(Packet(
@@ -147,5 +121,11 @@ class TcpClient {
     }
 
     onConnectionChanged?.call(false);
+  }
+
+  /// Clear connection target info so the client forgets the peer.
+  void clearTarget() {
+    _host = null;
+    _port = null;
   }
 }
