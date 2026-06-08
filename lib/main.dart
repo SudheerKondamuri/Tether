@@ -165,6 +165,8 @@ void backgroundMain() async {
               port: (port as int?) ?? TetherConstants.tcpPort,
             );
           }
+        } else if (command == 'DISCONNECT') {
+          connectionManager.disconnect();
         }
       }
     }
