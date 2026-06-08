@@ -1,10 +1,7 @@
-import 'dart:isolate';
 import 'dart:ui';
 import 'package:drift/isolate.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/core/database/app_database.dart';
-import 'package:tether/shared/constants.dart';
 import 'package:tether/shared/platform_utils.dart';
 
 /// Pre-initialized database singleton. Set via [initDatabase] before any
@@ -32,35 +29,39 @@ Future<void> initDatabase({bool isBackground = false}) async {
       _dbInstance = await AppDatabase.openShared();
     } else {
       // ── UI Isolate: Poll for the background server ──
-      SendPort? port =
-          IsolateNameServer.lookupPortByName('tether_db_isolate');
+      // The foreground service is started eagerly from
+      // MainActivity.configureFlutterEngine(), so by the time main() runs,
+      // the background engine is already being created.
 
       int attempts = 0;
-      while (port == null && attempts < 20) {
-        if (attempts == 0) {
-          // First attempt: wake the foreground service if it isn't running yet
+      const maxAttempts = 30; // 6 seconds max
+      const pollInterval = Duration(milliseconds: 200);
+
+      while (attempts < maxAttempts) {
+        final port =
+            IsolateNameServer.lookupPortByName('tether_db_isolate');
+
+        if (port != null) {
           try {
-            await const MethodChannel(TetherConstants.foregroundServiceChannel)
-                .invokeMethod('startService');
+            final driftIsolate = DriftIsolate.fromConnectPort(port);
+            _dbInstance = AppDatabase.connect(await driftIsolate.connect());
+            return;
           } catch (_) {
-            // Service might already be running — safe to ignore
+            // Port might be stale from a hot restart — the old DriftIsolate
+            // is dead. Clear it and keep polling for the new one.
+            IsolateNameServer.removePortNameMapping('tether_db_isolate');
           }
         }
-        await Future.delayed(const Duration(milliseconds: 200));
-        port = IsolateNameServer.lookupPortByName('tether_db_isolate');
+
+        await Future.delayed(pollInterval);
         attempts++;
       }
 
-      if (port == null) {
-        throw StateError(
-          'Fatal: Background Database Server failed to initialize '
-          'after ${attempts * 200}ms. The foreground service may have '
-          'been killed by the OS.',
-        );
-      }
-
-      final driftIsolate = DriftIsolate.fromConnectPort(port);
-      _dbInstance = AppDatabase.connect(await driftIsolate.connect());
+      throw StateError(
+        'Fatal: Background Database Server failed to initialize '
+        'after ${maxAttempts * pollInterval.inMilliseconds}ms. '
+        'The foreground service may have been killed by the OS.',
+      );
     }
   } else {
     // ── Desktop: Single-process, direct NativeDatabase ──
