@@ -1,11 +1,11 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:drift/isolate.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import 'package:flutter/services.dart';
 import 'package:tether/shared/constants.dart';
-import 'package:tether/shared/platform_utils.dart';
 import 'package:tether/core/database/tables.dart';
 
 part 'app_database.g.dart';
@@ -18,13 +18,53 @@ part 'app_database.g.dart';
   NotificationHistory,
 ])
 class AppDatabase extends _$AppDatabase {
+  /// Direct constructor for single-process use (Linux desktop).
   AppDatabase() : super(_openConnection());
-  AppDatabase.forTesting(super.e);
 
-  static bool isBackground = false;
+  /// Constructor for DriftIsolate client connections (Android multi-isolate).
+  /// DatabaseConnection extends QueryExecutor, so it passes directly to super.
+  AppDatabase.connect(super.connection);
+
+  /// Testing constructor.
+  AppDatabase.forTesting(super.e);
 
   @override
   int get schemaVersion => 1;
+
+  /// Spawn a DriftIsolate server and return a client-connected AppDatabase.
+  /// The DriftIsolate's connectPort is registered in IsolateNameServer
+  /// so the UI isolate can find and connect to it.
+  static Future<AppDatabase> openShared() async {
+    // Resolve path in the current isolate where platform channels work.
+    final dir = await getApplicationDocumentsDirectory();
+    final dbPath = p.join(dir.path, TetherConstants.databaseName);
+
+    // Spawn a dedicated Dart isolate that owns the single NativeDatabase.
+    // The closure captures dbPath (a String, which is sendable across isolates).
+    final isolate = await DriftIsolate.spawn(() {
+      return NativeDatabase(
+        File(dbPath),
+        logStatements: false,
+        setup: (rawDb) {
+          rawDb.execute('PRAGMA journal_mode=WAL;');
+          rawDb.execute('PRAGMA synchronous=NORMAL;');
+          // Force clients to bypass in-memory caching across isolates.
+          rawDb.execute('PRAGMA cache_size=0;');
+        },
+      );
+    });
+
+    // Register the connect port so the UI isolate can find it.
+    // Remove any stale registration first (e.g., from a previous service lifecycle).
+    IsolateNameServer.removePortNameMapping('tether_db_isolate');
+    IsolateNameServer.registerPortWithName(
+      isolate.connectPort,
+      'tether_db_isolate',
+    );
+
+    // The background isolate itself connects as a client too.
+    return AppDatabase.connect(await isolate.connect());
+  }
 
   // ─── Clipboard Operations ───
 
@@ -183,6 +223,7 @@ class AppDatabase extends _$AppDatabase {
   }
 }
 
+/// Direct NativeDatabase connection for single-process desktop use.
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -192,49 +233,7 @@ LazyDatabase _openConnection() {
       setup: (rawDb) {
         rawDb.execute('PRAGMA journal_mode=WAL;');
         rawDb.execute('PRAGMA synchronous=NORMAL;');
-        rawDb.execute('PRAGMA cache_size=0;'); // Prevent cross-process stale reads
       },
     );
-  });
-}
-
-void initDatabaseSync(AppDatabase db) {
-  if (!PlatformUtils.isAndroid) return;
-
-  const channel = MethodChannel('com.tether/db_sync');
-  bool isApplyingExternalUpdate = false;
-
-  // Listen for table updates from other isolate
-  channel.setMethodCallHandler((call) async {
-    if (call.method == 'onTableUpdate') {
-      final List<dynamic>? tables = call.arguments['tables'];
-      if (tables != null) {
-        final tableInfos = db.allTables
-            .where((t) => tables.contains(t.actualTableName))
-            .toSet();
-        if (tableInfos.isNotEmpty) {
-          isApplyingExternalUpdate = true;
-          try {
-            db.notifyUpdates(
-                tableInfos.map((t) => TableUpdate.onTable(t)).toSet());
-          } catch (_) {
-            // Ignore/Suppress
-          } finally {
-            isApplyingExternalUpdate = false;
-          }
-        }
-      }
-    }
-  });
-
-  // Listen to local updates and broadcast them
-  db.tableUpdates(const TableUpdateQuery.any()).listen((updates) {
-    if (isApplyingExternalUpdate) return;
-    final tables = updates.map((u) => u.table).toList();
-    if (tables.isNotEmpty) {
-      channel.invokeMethod('notifyTableUpdate', {
-        'tables': tables,
-      });
-    }
   });
 }
