@@ -20,11 +20,11 @@ class MainActivity : FlutterActivity() {
         ForegroundServicePlugin.register(flutterEngine, this)
 
         // Register database synchronization plugin
-        DatabaseSyncPlugin.register(flutterEngine)
+        DatabaseSyncPlugin.register(flutterEngine, this)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        DatabaseSyncPlugin.unregister(flutterEngine)
+        DatabaseSyncPlugin.unregister(flutterEngine, this)
         clipboardPlugin?.unregister()
         NotificationPlugin.unregister()
         super.cleanUpFlutterEngine(flutterEngine)
