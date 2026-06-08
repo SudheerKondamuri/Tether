@@ -310,13 +310,6 @@ class ForegroundServicePlugin : Service() {
             backgroundEngine?.plugins?.add(bonsoirPlugin)
         } catch (_: Exception) {}
 
-        // Register database synchronization plugin
-        try {
-            DatabaseSyncPlugin.register(backgroundEngine!!, applicationContext)
-        } catch (e: Exception) {
-            android.util.Log.e("Tether", "Failed to register DatabaseSyncPlugin: ${e.message}")
-        }
-
         // Register custom MethodChannel plugins on background engine
         val clipboardPlugin = ClipboardPlugin(applicationContext)
         clipboardPlugin.register(backgroundEngine!!)
@@ -332,7 +325,6 @@ class ForegroundServicePlugin : Service() {
 
     private fun teardownBackgroundDartIsolate() {
         backgroundEngine?.let {
-            DatabaseSyncPlugin.unregister(it, applicationContext)
             it.destroy()
         }
         backgroundEngine = null
