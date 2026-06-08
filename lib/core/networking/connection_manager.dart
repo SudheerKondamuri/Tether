@@ -371,6 +371,36 @@ class ConnectionManager {
     ref.read(databaseProvider).setSetting('connection_state', newState.name);
   }
 
+  /// Disconnect from the current peer.
+  Future<void> disconnect() async {
+    if (PlatformUtils.isAndroid && !isBackgroundIsolate) {
+      try {
+        await const MethodChannel(TetherConstants.foregroundServiceChannel)
+            .invokeMethod('sendBackgroundCommand', {
+          'command': 'DISCONNECT',
+        });
+      } catch (e) {
+        developer.log('Failed to delegate disconnect to background service: $e');
+      }
+      return;
+    }
+
+    developer.log('Disconnecting from peer...');
+    await _client.disconnect();
+    await _server.stop();
+    
+    // Clear peer info
+    _peer = null;
+    _peerController.add(null);
+    _updatePeerInSettings(null);
+    
+    // Reset state and restart server/discovery
+    _updateState(TetherConnectionState.disconnected);
+    
+    // Restart server so we are ready for new connections
+    await startServer();
+  }
+
   /// Disconnect and stop everything.
   Future<void> dispose() async {
     await _client.disconnect();
