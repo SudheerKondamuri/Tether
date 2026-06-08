@@ -270,7 +270,7 @@ class ForegroundServicePlugin : Service() {
 
         // Register database synchronization plugin
         try {
-            DatabaseSyncPlugin.register(backgroundEngine!!)
+            DatabaseSyncPlugin.register(backgroundEngine!!, applicationContext)
         } catch (e: Exception) {
             android.util.Log.e("Tether", "Failed to register DatabaseSyncPlugin: ${e.message}")
         }
@@ -290,7 +290,7 @@ class ForegroundServicePlugin : Service() {
 
     private fun teardownBackgroundDartIsolate() {
         backgroundEngine?.let {
-            DatabaseSyncPlugin.unregister(it)
+            DatabaseSyncPlugin.unregister(it, applicationContext)
             it.destroy()
         }
         backgroundEngine = null
