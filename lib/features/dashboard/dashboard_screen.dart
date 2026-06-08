@@ -126,6 +126,34 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       label: 'Battery',
                       value: '${connDevice.battery}%',
                     ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => ref.read(connectionManagerProvider).disconnect(),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        backgroundColor: TetherColors.accentDanger.withAlpha(20),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.link_off,
+                        color: TetherColors.accentDanger,
+                        size: 16,
+                      ),
+                      label: const Text(
+                        'Disconnect',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: TetherColors.accentDanger,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
