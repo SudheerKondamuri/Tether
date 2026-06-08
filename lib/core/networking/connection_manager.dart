@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' hide Column;
