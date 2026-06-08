@@ -163,6 +163,20 @@ class _AndroidHome extends ConsumerWidget {
                 ),
                 if (connDevice?.battery != null)
                   _BatteryChip(battery: connDevice!.battery!),
+                if (isConnected) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(8),
+                    icon: const Icon(
+                      Icons.link_off,
+                      color: TetherColors.accentDanger,
+                      size: 20,
+                    ),
+                    onPressed: () => ref.read(connectionManagerProvider).disconnect(),
+                    tooltip: 'Disconnect',
+                  ),
+                ],
               ],
             ),
           ),
