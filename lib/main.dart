@@ -1,5 +1,7 @@
 import 'dart:isolate';
 import 'dart:ui';
+import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -144,6 +146,17 @@ void backgroundMain() async {
           port: message['port'] ?? TetherConstants.tcpPort,
         );
       }
+    }
+  });
+
+  // Periodically run passive checkpoint on the SQLite database to prevent WAL file bloat.
+  Timer.periodic(const Duration(minutes: 30), (_) async {
+    try {
+      final db = container.read(databaseProvider);
+      await db.customStatement('PRAGMA wal_checkpoint(PASSIVE);');
+      developer.log('SQLite WAL passive checkpoint completed.');
+    } catch (e) {
+      developer.log('SQLite WAL checkpoint failed: $e');
     }
   });
 }
