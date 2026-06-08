@@ -83,39 +83,69 @@ class TlsManager {
     final publicKey = pair.publicKey as pc.RSAPublicKey;
     final privateKey = pair.privateKey as pc.RSAPrivateKey;
 
-    // Encode private key to PEM
-    final privKeyPem = _encodeRSAPrivateKeyToPem(privateKey);
+    // Encode private key to PKCS#8 PEM (required by Dart's SecurityContext /
+    // BoringSSL). PKCS#1 format (BEGIN RSA PRIVATE KEY) is rejected with
+    // BAD_ENCODING on Android.
+    final privKeyPem = _encodeRSAPrivateKeyToPkcs8Pem(privateKey);
     await File(keyPath).writeAsString(privKeyPem);
 
     // Generate self-signed X.509 certificate
-    final certPem = _generateSelfSignedCert(publicKey, privateKey, secureRandom);
+    final certPem =
+        _generateSelfSignedCert(publicKey, privateKey, secureRandom);
     await File(certPath).writeAsString(certPem);
   }
 
-  static String _encodeRSAPrivateKeyToPem(pc.RSAPrivateKey key) {
-    final seq = ASN1Sequence();
-    seq.add(ASN1Integer(BigInt.zero)); // version
-    seq.add(ASN1Integer(key.modulus!));
-    seq.add(ASN1Integer(key.publicExponent!));
-    seq.add(ASN1Integer(key.privateExponent!));
-    seq.add(ASN1Integer(key.p!));
-    seq.add(ASN1Integer(key.q!));
-    seq.add(ASN1Integer(key.privateExponent! % (key.p! - BigInt.one))); // d mod (p-1)
-    seq.add(ASN1Integer(key.privateExponent! % (key.q! - BigInt.one))); // d mod (q-1)
-    seq.add(ASN1Integer(key.q!.modInverse(key.p!))); // q^-1 mod p
+  /// Encode RSA private key to PKCS#8 PEM format.
+  ///
+  /// PKCS#8 wraps the PKCS#1 RSAPrivateKey in:
+  ///   PrivateKeyInfo ::= SEQUENCE {
+  ///     version   INTEGER (0),
+  ///     algorithm AlgorithmIdentifier { rsaEncryption, NULL },
+  ///     privateKey OCTET STRING (containing PKCS#1 RSAPrivateKey DER)
+  ///   }
+  static String _encodeRSAPrivateKeyToPkcs8Pem(pc.RSAPrivateKey key) {
+    // Step 1: Build the inner PKCS#1 RSAPrivateKey structure
+    final pkcs1Seq = ASN1Sequence();
+    pkcs1Seq.add(ASN1Integer(BigInt.zero)); // version
+    pkcs1Seq.add(ASN1Integer(key.modulus!));
+    pkcs1Seq.add(ASN1Integer(key.publicExponent!));
+    pkcs1Seq.add(ASN1Integer(key.privateExponent!));
+    pkcs1Seq.add(ASN1Integer(key.p!));
+    pkcs1Seq.add(ASN1Integer(key.q!));
+    pkcs1Seq.add(
+        ASN1Integer(key.privateExponent! % (key.p! - BigInt.one))); // d mod (p-1)
+    pkcs1Seq.add(
+        ASN1Integer(key.privateExponent! % (key.q! - BigInt.one))); // d mod (q-1)
+    pkcs1Seq.add(ASN1Integer(key.q!.modInverse(key.p!))); // q^-1 mod p
 
-    final encoded = base64Encode(seq.encodedBytes);
+    // Step 2: Wrap in PKCS#8 PrivateKeyInfo envelope
+    final pkcs8Seq = ASN1Sequence();
+    pkcs8Seq.add(ASN1Integer(BigInt.zero)); // version 0
+
+    // AlgorithmIdentifier for RSA: OID 1.2.840.113549.1.1.1 + NULL
+    final algorithmId = ASN1Sequence();
+    algorithmId.add(
+        ASN1ObjectIdentifier.fromComponentString('1.2.840.113549.1.1.1'));
+    algorithmId.add(ASN1Null());
+    pkcs8Seq.add(algorithmId);
+
+    // privateKey as OCTET STRING containing the DER-encoded PKCS#1 key
+    pkcs8Seq
+        .add(ASN1OctetString(Uint8List.fromList(pkcs1Seq.encodedBytes)));
+
+    final encoded = base64Encode(pkcs8Seq.encodedBytes);
     final lines = <String>[];
-    lines.add('-----BEGIN RSA PRIVATE KEY-----');
+    lines.add('-----BEGIN PRIVATE KEY-----');
     for (var i = 0; i < encoded.length; i += 64) {
-      lines.add(encoded.substring(i, i + 64 > encoded.length ? encoded.length : i + 64));
+      lines.add(encoded.substring(
+          i, i + 64 > encoded.length ? encoded.length : i + 64));
     }
-    lines.add('-----END RSA PRIVATE KEY-----');
+    lines.add('-----END PRIVATE KEY-----');
     return lines.join('\n');
   }
 
-  static String _generateSelfSignedCert(
-      pc.RSAPublicKey pubKey, pc.RSAPrivateKey privKey, pc.SecureRandom rng) {
+  static String _generateSelfSignedCert(pc.RSAPublicKey pubKey,
+      pc.RSAPrivateKey privKey, pc.SecureRandom rng) {
     // Build a minimal X.509 v3 certificate using ASN1
     final tbsCert = ASN1Sequence();
 
@@ -125,11 +155,13 @@ class TlsManager {
     tbsCert.add(versionContext);
 
     // Serial number
-    tbsCert.add(ASN1Integer(BigInt.from(DateTime.now().millisecondsSinceEpoch)));
+    tbsCert
+        .add(ASN1Integer(BigInt.from(DateTime.now().millisecondsSinceEpoch)));
 
     // Signature algorithm: SHA256withRSA
     final sigAlg = ASN1Sequence();
-    sigAlg.add(ASN1ObjectIdentifier.fromComponentString('1.2.840.113549.1.1.11'));
+    sigAlg.add(
+        ASN1ObjectIdentifier.fromComponentString('1.2.840.113549.1.1.11'));
     sigAlg.add(ASN1Null());
     tbsCert.add(sigAlg);
 
@@ -156,7 +188,8 @@ class TlsManager {
     // Subject public key info
     final pubKeyInfo = ASN1Sequence();
     final pubKeyAlg = ASN1Sequence();
-    pubKeyAlg.add(ASN1ObjectIdentifier.fromComponentString('1.2.840.113549.1.1.1'));
+    pubKeyAlg.add(
+        ASN1ObjectIdentifier.fromComponentString('1.2.840.113549.1.1.1'));
     pubKeyAlg.add(ASN1Null());
     pubKeyInfo.add(pubKeyAlg);
 
@@ -168,9 +201,12 @@ class TlsManager {
     tbsCert.add(pubKeyInfo);
 
     // Sign TBS certificate
-    final signer = pc.RSASigner(pc.SHA256Digest(), '0609608648016503040201');
-    signer.init(true, pc.PrivateKeyParameter<pc.RSAPrivateKey>(privKey));
-    final signature = signer.generateSignature(Uint8List.fromList(tbsCert.encodedBytes));
+    final signer =
+        pc.RSASigner(pc.SHA256Digest(), '0609608648016503040201');
+    signer.init(
+        true, pc.PrivateKeyParameter<pc.RSAPrivateKey>(privKey));
+    final signature = signer
+        .generateSignature(Uint8List.fromList(tbsCert.encodedBytes));
 
     // Build full certificate
     final cert = ASN1Sequence();
@@ -183,7 +219,8 @@ class TlsManager {
     final lines = <String>[];
     lines.add('-----BEGIN CERTIFICATE-----');
     for (var i = 0; i < encoded.length; i += 64) {
-      lines.add(encoded.substring(i, i + 64 > encoded.length ? encoded.length : i + 64));
+      lines.add(encoded.substring(
+          i, i + 64 > encoded.length ? encoded.length : i + 64));
     }
     lines.add('-----END CERTIFICATE-----');
     return lines.join('\n');
@@ -204,12 +241,32 @@ class TlsManager {
   }
 
   /// Create a SecurityContext from cert and key files.
+  /// If the existing certs are corrupted (BAD_ENCODING from old PKCS#1
+  /// format), deletes them and regenerates fresh PKCS#8 ones.
   static Future<SecurityContext> createServerContext() async {
-    final (certPath, keyPath) = await ensureCertificate();
-    final ctx = SecurityContext()
-      ..useCertificateChain(certPath)
-      ..usePrivateKey(keyPath);
-    return ctx;
+    var (certPath, keyPath) = await ensureCertificate();
+
+    try {
+      final ctx = SecurityContext()
+        ..useCertificateChain(certPath)
+        ..usePrivateKey(keyPath);
+      return ctx;
+    } on TlsException {
+      // Existing certs are corrupted (e.g. old PKCS#1 format key).
+      // Delete and regenerate.
+      try {
+        await File(certPath).delete();
+      } catch (_) {}
+      try {
+        await File(keyPath).delete();
+      } catch (_) {}
+
+      (certPath, keyPath) = await ensureCertificate();
+      final ctx = SecurityContext()
+        ..useCertificateChain(certPath)
+        ..usePrivateKey(keyPath);
+      return ctx;
+    }
   }
 
   /// Create a SecurityContext for client that trusts a specific cert.
