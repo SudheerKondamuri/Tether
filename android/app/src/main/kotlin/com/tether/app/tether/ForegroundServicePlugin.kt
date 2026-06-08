@@ -31,6 +31,7 @@ class ForegroundServicePlugin : Service() {
     private var backgroundEngine: FlutterEngine? = null
     private var networkReceiver: BroadcastReceiver? = null
     private var isHotspotEnabled = false
+    private var commandReceiver: BroadcastReceiver? = null
 
     private fun checkCurrentHotspotState(): Boolean {
         return try {
@@ -99,6 +100,19 @@ class ForegroundServicePlugin : Service() {
                     "openAutostartSettings" -> {
                         val opened = openAutostartSettings(context)
                         result.success(opened)
+                    }
+                    "sendBackgroundCommand" -> {
+                        val command = call.argument<String>("command")
+                        val args = call.argument<Map<String, Any>>("args")
+                        val intent = Intent("com.tether.BACKGROUND_COMMAND").apply {
+                            setPackage(context.packageName)
+                            putExtra("command", command)
+                            if (args != null) {
+                                putExtra("args", java.util.HashMap(args))
+                            }
+                        }
+                        context.sendBroadcast(intent, "com.tether.INTERNAL_BROADCAST")
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }
@@ -186,6 +200,33 @@ class ForegroundServicePlugin : Service() {
         startNotificationForeground()
         initMulticastLock()
         registerNetworkTracking()
+        
+        // Register receiver for cross-process commands from the UI process
+        val filter = IntentFilter("com.tether.BACKGROUND_COMMAND")
+        commandReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == "com.tether.BACKGROUND_COMMAND") {
+                    val command = intent.getStringExtra("command")
+                    @Suppress("UNCHECKED_CAST")
+                    val args = intent.getSerializableExtra("args") as? HashMap<String, Any>
+                    
+                    // Forward to background Dart engine
+                    backgroundEngine?.let { engine ->
+                        val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "com.tether/foreground")
+                        channel.invokeMethod("onBackgroundCommand", mapOf(
+                            "command" to command,
+                            "args" to args
+                        ))
+                    }
+                }
+            }
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(commandReceiver, filter, "com.tether.INTERNAL_BROADCAST", null, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(commandReceiver, filter, "com.tether.INTERNAL_BROADCAST", null)
+        }
         
         // Start the background engine unconditionally when service is created
         triggerBackgroundDartIsolate()
@@ -299,8 +340,16 @@ class ForegroundServicePlugin : Service() {
     override fun onDestroy() {
         if (multicastLock?.isHeld == true) multicastLock?.release()
         if (networkReceiver != null) {
-            unregisterReceiver(networkReceiver)
+            try {
+                unregisterReceiver(networkReceiver)
+            } catch (_: Exception) {}
         }
+        commandReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+        }
+        commandReceiver = null
         teardownBackgroundDartIsolate()
         super.onDestroy()
     }
