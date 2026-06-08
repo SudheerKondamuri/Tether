@@ -287,30 +287,10 @@ class ForegroundServicePlugin : Service() {
         loader.startInitialization(applicationContext)
         loader.ensureInitializationComplete(applicationContext, null)
         
-        // automaticallyRegisterPlugins = false to avoid conflicts with
-        // plugins already registered on the main activity engine in the
-        // same process.
-        backgroundEngine = FlutterEngine(applicationContext, null, false)
-
-        // Manually register only the plugins needed by the background isolate.
-        // Wrap in try-catch since some may already be registered in this process.
-        try {
-            val jniClass = Class.forName("com.github.dart_lang.jni_flutter.JniFlutterPlugin")
-            val jniPlugin = jniClass.getDeclaredConstructor().newInstance() as io.flutter.embedding.engine.plugins.FlutterPlugin
-            backgroundEngine?.plugins?.add(jniPlugin)
-        } catch (_: Exception) {}
-
-        try {
-            val pathProviderClass = Class.forName("dev.flutter.plugins.pathprovider.PathProviderPlugin")
-            val pathProviderPlugin = pathProviderClass.getDeclaredConstructor().newInstance() as io.flutter.embedding.engine.plugins.FlutterPlugin
-            backgroundEngine?.plugins?.add(pathProviderPlugin)
-        } catch (_: Exception) {}
-
-        try {
-            val bonsoirClass = Class.forName("fr.skyost.bonsoir.BonsoirPlugin")
-            val bonsoirPlugin = bonsoirClass.getDeclaredConstructor().newInstance() as io.flutter.embedding.engine.plugins.FlutterPlugin
-            backgroundEngine?.plugins?.add(bonsoirPlugin)
-        } catch (_: Exception) {}
+        // Let Flutter automatically register all plugins via GeneratedPluginRegistrant.
+        // This is strictly required so that path_provider, drift, jni_flutter, etc.
+        // are properly initialized in the background engine.
+        backgroundEngine = FlutterEngine(applicationContext)
 
         // Register custom MethodChannel plugins on background engine
         val clipboardPlugin = ClipboardPlugin(applicationContext)
