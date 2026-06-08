@@ -21,6 +21,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
+    <!-- Secure cross-process broadcasts for database synchronization -->
+    <permission
+        android:name="com.tether.INTERNAL_BROADCAST"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.tether.INTERNAL_BROADCAST" />
+
     <application
         android:label="Tether"
         android:name="${applicationName}"
@@ -47,6 +53,7 @@
         <!-- Notification Listener Service -->
         <service
             android:name=".NotificationPlugin"
+            android:process=":background"
             android:exported="true"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
@@ -64,6 +71,7 @@
         <!-- Foreground Service for persistent TCP -->
         <service
             android:name=".ForegroundServicePlugin"
+            android:process=":background"
             android:exported="false"
             android:stopWithTask="false"
             android:foregroundServiceType="connectedDevice"/>
