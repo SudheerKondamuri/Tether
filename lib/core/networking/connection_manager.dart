@@ -69,6 +69,7 @@ class ConnectedDevice {
 enum TetherConnectionState { disconnected, searching, connecting, connected }
 
 /// Orchestrates TCP server + client, manages connection lifecycle.
+/// Sole owner of reconnection policy, tie-breaking, and auto-reconnect.
 class ConnectionManager {
   final Ref ref;
   final TcpServer _server = TcpServer();
@@ -95,6 +96,19 @@ class ConnectionManager {
   TetherConnectionState get state => _state;
   ConnectedDevice? get peer => _peer;
   bool get isConnected => _state == TetherConnectionState.connected;
+
+  /// Mutex to prevent concurrent connectTo() calls from racing.
+  Completer<void>? _connectLock;
+
+  /// Periodic timer for auto-reconnection after unexpected disconnects.
+  Timer? _autoReconnectTimer;
+
+  /// Whether the last disconnect was explicit (user-initiated).
+  bool _explicitDisconnect = false;
+
+  /// The peer ID we are currently trying to connect to as a client.
+  /// Used for handshake tie-breaker detection.
+  String? _connectingToPeerId;
 
   ConnectionManager({required this.ref});
 
@@ -187,17 +201,72 @@ class ConnectionManager {
       _updateState(TetherConnectionState.connecting);
     };
     _server.onDisconnect = (socket) {
-      _peer = null;
-      _peerController.add(null);
-      _updatePeerInSettings(null);
-      _updateState(TetherConnectionState.disconnected);
+      _onPeerDisconnected();
     };
 
     await _server.start();
     _updateState(TetherConnectionState.searching);
   }
 
+  /// Called when a peer disconnects unexpectedly (not user-initiated).
+  void _onPeerDisconnected() {
+    _peer = null;
+    _connectingToPeerId = null;
+    _peerController.add(null);
+    _updatePeerInSettings(null);
+
+    if (_explicitDisconnect) {
+      // User-initiated disconnect: go to disconnected, no auto-reconnect
+      _updateState(TetherConnectionState.disconnected);
+      _explicitDisconnect = false;
+    } else {
+      // Unexpected disconnect: go to searching and start auto-reconnect
+      _updateState(TetherConnectionState.searching);
+      _startAutoReconnect();
+    }
+  }
+
+  /// Start the auto-reconnect timer. Runs every 10 seconds, probes paired
+  /// devices at their last known IP:port, and lets discovery handle the rest.
+  void _startAutoReconnect() {
+    _stopAutoReconnect();
+    _autoReconnectTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (_state == TetherConnectionState.connected ||
+          _state == TetherConnectionState.connecting) {
+        _stopAutoReconnect();
+        return;
+      }
+
+      final db = ref.read(databaseProvider);
+      final pairedDevices = await db.getPairedDevices();
+      if (pairedDevices.isEmpty) return;
+
+      // Try direct TCP connection to each paired device's last known address
+      for (final device in pairedDevices) {
+        if (device.lastIp != null && device.lastPort != null) {
+          developer.log('Auto-reconnect: probing ${device.name} at ${device.lastIp}:${device.lastPort}');
+          final success = await connectTo(
+            host: device.lastIp!,
+            port: device.lastPort!,
+          );
+          if (success) {
+            _stopAutoReconnect();
+            return;
+          }
+        }
+      }
+      // If direct probe fails, discovery is also running and will call
+      // evaluateDiscoveredPeer() when the peer re-announces.
+    });
+  }
+
+  void _stopAutoReconnect() {
+    _autoReconnectTimer?.cancel();
+    _autoReconnectTimer = null;
+  }
+
   /// Connect to a peer device as a client.
+  /// Protected by a mutex to prevent concurrent connection races.
   Future<bool> connectTo({
     required String host,
     int port = TetherConstants.tcpPort,
@@ -219,44 +288,70 @@ class ConnectionManager {
       }
     }
 
-    _updateState(TetherConnectionState.connecting);
-
-    _client.onPacket = _handleClientPacket;
-    _client.onConnectionChanged = (connected) {
-      if (!connected) {
-        _peer = null;
-        _peerController.add(null);
-        _updatePeerInSettings(null);
-        _updateState(TetherConnectionState.disconnected);
-      }
-    };
-
-    final success = await _client.connect(
-      host: host,
-      port: port,
-      deviceId: deviceId,
-    );
-
-    if (success) {
-      // Send handshake
-      _client.send(Packet(
-        type: PacketType.handshake,
-        deviceId: deviceId,
-        payload: HandshakePayload(
-          name: deviceName,
-          platform: PlatformUtils.platformName,
-          version: TetherConstants.appVersion,
-        ).toJson(),
-      ));
-    } else {
-      _updateState(TetherConnectionState.disconnected);
+    // ── Mutex: prevent concurrent connectTo() races ──
+    if (_connectLock != null) {
+      developer.log('connectTo: already connecting, skipping duplicate call');
+      return false;
     }
+    _connectLock = Completer<void>();
 
-    return success;
+    try {
+      _updateState(TetherConnectionState.connecting);
+
+      _client.onPacket = _handleClientPacket;
+      _client.onConnectionChanged = (connected) {
+        if (!connected) {
+          _onPeerDisconnected();
+        }
+      };
+
+      final success = await _client.connect(
+        host: host,
+        port: port,
+        deviceId: deviceId,
+      );
+
+      if (success) {
+        // Send handshake
+        _client.send(Packet(
+          type: PacketType.handshake,
+          deviceId: deviceId,
+          payload: HandshakePayload(
+            name: deviceName,
+            platform: PlatformUtils.platformName,
+            version: TetherConstants.appVersion,
+          ).toJson(),
+        ));
+      } else {
+        _updateState(TetherConnectionState.searching);
+      }
+
+      return success;
+    } finally {
+      _connectLock?.complete();
+      _connectLock = null;
+    }
   }
 
   void _handleServerPacket(Packet packet, SecureSocket socket) {
     if (packet.type == PacketType.handshake) {
+      // ── Handshake Tie-Breaker Guard ──
+      // If we are currently connecting to this same peer as a client,
+      // we have a symmetric connection conflict. The device with the
+      // lower ID yields its server socket — the higher ID's client pipe wins.
+      if (_state == TetherConnectionState.connecting &&
+          _connectingToPeerId != null &&
+          _connectingToPeerId == packet.deviceId) {
+        if (deviceId.compareTo(packet.deviceId) < 0) {
+          developer.log(
+            'Symmetric connection conflict detected with ${packet.deviceId}. '
+            'Our ID is lower — yielding server socket.',
+          );
+          socket.destroy();
+          return;
+        }
+      }
+
       final hs = HandshakePayload.fromJson(packet.payload);
       _peer = ConnectedDevice(
         deviceId: packet.deviceId,
@@ -265,9 +360,11 @@ class ConnectionManager {
         ip: socket.remoteAddress.address,
         port: socket.remotePort,
       );
+      _connectingToPeerId = null;
       _peerController.add(_peer);
       _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
+      _stopAutoReconnect();
 
       // Extract peer's TLS certificate fingerprint and store pairing record
       _storePairingRecord(packet.deviceId, hs.name, hs.platform, socket.peerCertificate, socket.remoteAddress.address, socket.remotePort);
@@ -306,9 +403,11 @@ class ConnectionManager {
         ip: _client.host ?? '',
         port: _client.port ?? TetherConstants.tcpPort,
       );
+      _connectingToPeerId = null;
       _peerController.add(_peer);
       _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
+      _stopAutoReconnect();
 
       // Extract peer's TLS certificate fingerprint and store pairing record
       _storePairingRecord(
@@ -371,7 +470,8 @@ class ConnectionManager {
     ref.read(databaseProvider).setSetting('connection_state', newState.name);
   }
 
-  /// Disconnect from the current peer.
+  /// Disconnect from the current peer (user-initiated).
+  /// This sets the explicit flag to prevent auto-reconnect.
   Future<void> disconnect() async {
     if (PlatformUtils.isAndroid && !isBackgroundIsolate) {
       try {
@@ -385,8 +485,13 @@ class ConnectionManager {
       return;
     }
 
-    developer.log('Disconnecting from peer...');
+    developer.log('Disconnecting from peer (user-initiated)...');
+    _explicitDisconnect = true;
+    _stopAutoReconnect();
+    _connectingToPeerId = null;
+
     await _client.disconnect();
+    _client.clearTarget();
     await _server.stop();
     
     // Clear peer info
@@ -394,7 +499,7 @@ class ConnectionManager {
     _peerController.add(null);
     _updatePeerInSettings(null);
     
-    // Reset state and restart server/discovery
+    // Reset state — no auto-reconnect for explicit disconnect
     _updateState(TetherConnectionState.disconnected);
     
     // Restart server so we are ready for new connections
@@ -403,6 +508,7 @@ class ConnectionManager {
 
   /// Disconnect and stop everything.
   Future<void> dispose() async {
+    _stopAutoReconnect();
     await _client.disconnect();
     await _server.stop();
     await _stateController.close();
