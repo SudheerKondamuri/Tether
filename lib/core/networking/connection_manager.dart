@@ -144,6 +144,11 @@ class ConnectionManager {
         evaluateDiscoveredPeer(device.name, device.ip, device.port, device.nonce, device.discoveryHash);
       }
     });
+
+    // ── CRITICAL FIX: AGGRESSIVE COLD START PROBING ──
+    // If the service just restarted (e.g. after being swiped away), immediately 
+    // probe paired devices instead of waiting passively for discovery packets.
+    _startAutoReconnect();
   }
 
   void evaluateDiscoveredPeer(String peerName, String host, int port, int peerNonce, String? discoveryHash) {
@@ -231,9 +236,10 @@ class ConnectionManager {
   void _startAutoReconnect() {
     _stopAutoReconnect();
     _autoReconnectTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      // Prevent timer from firing if a connection attempt is actively in progress
       if (_state == TetherConnectionState.connected ||
-          _state == TetherConnectionState.connecting) {
-        _stopAutoReconnect();
+          _state == TetherConnectionState.connecting || 
+          _connectLock != null) {
         return;
       }
 
@@ -241,7 +247,6 @@ class ConnectionManager {
       final pairedDevices = await db.getPairedDevices();
       if (pairedDevices.isEmpty) return;
 
-      // Try direct TCP connection to each paired device's last known address
       for (final device in pairedDevices) {
         if (device.lastIp != null && device.lastPort != null) {
           developer.log('Auto-reconnect: probing ${device.name} at ${device.lastIp}:${device.lastPort}');
@@ -255,8 +260,6 @@ class ConnectionManager {
           }
         }
       }
-      // If direct probe fails, discovery is also running and will call
-      // evaluateDiscoveredPeer() when the peer re-announces.
     });
   }
 
@@ -335,18 +338,12 @@ class ConnectionManager {
 
   void _handleServerPacket(Packet packet, SecureSocket socket) {
     if (packet.type == PacketType.handshake) {
-      // ── Handshake Tie-Breaker Guard ──
-      // If we are currently connecting to this same peer as a client,
-      // we have a symmetric connection conflict. The device with the
-      // lower ID yields its server socket — the higher ID's client pipe wins.
-      if (_state == TetherConnectionState.connecting &&
-          _connectingToPeerId != null &&
-          _connectingToPeerId == packet.deviceId) {
+      // ── Fixed Handshake Tie-Breaker Guard ──
+      // If we are currently trying to connect or already connected, and we receive 
+      // an inbound handshake as a server, a symmetrical collision occurred. 
+      if (_state == TetherConnectionState.connecting || _state == TetherConnectionState.connected) {
         if (deviceId.compareTo(packet.deviceId) < 0) {
-          developer.log(
-            'Symmetric connection conflict detected with ${packet.deviceId}. '
-            'Our ID is lower — yielding server socket.',
-          );
+          developer.log('Symmetric connection conflict detected. Our ID is lower — yielding server socket.');
           socket.destroy();
           return;
         }
