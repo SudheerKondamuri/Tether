@@ -289,7 +289,13 @@ class MdnsDiscovery {
 
       _udpPingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
         final ping = "TETHER_DISCOVER:$discoverySessionNonce";
-        _udpDiscoverySocket?.send(ping.codeUnits, InternetAddress("255.255.255.255"), 5281);
+        
+        try {
+          _udpDiscoverySocket?.send(ping.codeUnits, InternetAddress("255.255.255.255"), 5281);
+        } catch (e) {
+          // Ignore exceptions on restricted hotspot interfaces. 
+          // The unicast fallback below will handle discovery.
+        }
         
         _consecutiveSilenceCycles++;
         if (_consecutiveSilenceCycles >= 3) { // 9 seconds of network silence
