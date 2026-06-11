@@ -108,7 +108,15 @@ class ForegroundServicePlugin : Service() {
                             setPackage(context.packageName)
                             putExtra("command", command)
                             if (args != null) {
-                                putExtra("args", java.util.HashMap(args))
+                                for ((key, value) in args) {
+                                    when (value) {
+                                        is String -> putExtra(key, value)
+                                        is Int -> putExtra(key, value)
+                                        is Long -> putExtra(key, value)
+                                        is Double -> putExtra(key, value)
+                                        is Boolean -> putExtra(key, value)
+                                    }
+                                }
                             }
                         }
                         context.sendBroadcast(intent, "com.tether.INTERNAL_BROADCAST")
@@ -207,15 +215,24 @@ class ForegroundServicePlugin : Service() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == "com.tether.BACKGROUND_COMMAND") {
                     val command = intent.getStringExtra("command")
-                    @Suppress("UNCHECKED_CAST")
-                    val args = intent.getSerializableExtra("args") as? HashMap<String, Any>
+                    
+                    val argsMap = HashMap<String, Any>()
+                    intent.extras?.let { extras ->
+                        for (key in extras.keySet()) {
+                            if (key != "command") {
+                                extras.get(key)?.let { value ->
+                                    argsMap[key] = value
+                                }
+                            }
+                        }
+                    }
                     
                     // Forward to background Dart engine
                     backgroundEngine?.let { engine ->
                         val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "com.tether/foreground")
                         channel.invokeMethod("onBackgroundCommand", mapOf(
                             "command" to command,
-                            "args" to args
+                            "args" to argsMap
                         ))
                     }
                 }
