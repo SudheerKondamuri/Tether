@@ -284,7 +284,24 @@ class ConnectionManager {
             'port': port,
           },
         });
-        return true;
+        
+        final db = ref.read(databaseProvider);
+        int attempts = 0;
+        while (attempts < 25) { // 5 seconds max
+          await Future.delayed(const Duration(milliseconds: 200));
+          final stateVal = await db.getSetting('connection_state');
+          final peerVal = await db.getSetting('connected_peer');
+          if (stateVal == TetherConnectionState.connected.name && peerVal != null && peerVal.isNotEmpty) {
+            try {
+              final peerJson = jsonDecode(peerVal) as Map<String, dynamic>;
+              if (peerJson['ip'] == host) {
+                return true;
+              }
+            } catch (_) {}
+          }
+          attempts++;
+        }
+        return false;
       } catch (e) {
         developer.log('Failed to delegate connectTo to background service: $e');
         return false;
