@@ -196,8 +196,7 @@ class TlsManager {
     final pubKeySeq = ASN1Sequence();
     pubKeySeq.add(ASN1Integer(pubKey.modulus!));
     pubKeySeq.add(ASN1Integer(pubKey.exponent!));
-    pubKeyInfo.add(ASN1BitString(
-        Uint8List.fromList([0x00, ...pubKeySeq.encodedBytes])));
+    pubKeyInfo.add(ASN1BitString(pubKeySeq.encodedBytes));
     tbsCert.add(pubKeyInfo);
 
     // Sign TBS certificate
@@ -212,8 +211,7 @@ class TlsManager {
     final cert = ASN1Sequence();
     cert.add(tbsCert);
     cert.add(sigAlg);
-    cert.add(ASN1BitString(
-        Uint8List.fromList([0x00, ...signature.bytes])));
+    cert.add(ASN1BitString(signature.bytes));
 
     final encoded = base64Encode(cert.encodedBytes);
     final lines = <String>[];
