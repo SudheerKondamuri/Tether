@@ -36,6 +36,7 @@ class TcpServer {
           InternetAddress.anyIPv4,
           port,
           ctx,
+          shared: true, // MANDATORY: Bypasses OS TIME_WAIT locks after process eviction
         );
         break;
       } catch (e) {
