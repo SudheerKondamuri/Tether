@@ -106,10 +106,6 @@ class ConnectionManager {
   /// Whether the last disconnect was explicit (user-initiated).
   bool _explicitDisconnect = false;
 
-  /// The peer ID we are currently trying to connect to as a client.
-  /// Used for handshake tie-breaker detection.
-  String? _connectingToPeerId;
-
   ConnectionManager({required this.ref});
 
   Future<void> init() async {
@@ -218,7 +214,6 @@ class ConnectionManager {
   /// Called when a peer disconnects unexpectedly (not user-initiated).
   void _onPeerDisconnected() {
     _peer = null;
-    _connectingToPeerId = null;
     _peerController.add(null);
     _updatePeerInSettings(null);
 
@@ -376,7 +371,6 @@ class ConnectionManager {
         ip: socket.remoteAddress.address,
         port: socket.remotePort,
       );
-      _connectingToPeerId = null;
       _peerController.add(_peer);
       _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
@@ -419,7 +413,6 @@ class ConnectionManager {
         ip: _client.host ?? '',
         port: _client.port ?? TetherConstants.tcpPort,
       );
-      _connectingToPeerId = null;
       _peerController.add(_peer);
       _updatePeerInSettings(_peer);
       _updateState(TetherConnectionState.connected);
@@ -504,7 +497,6 @@ class ConnectionManager {
     developer.log('Disconnecting from peer (user-initiated)...');
     _explicitDisconnect = true;
     _stopAutoReconnect();
-    _connectingToPeerId = null;
 
     await _client.disconnect();
     _client.clearTarget();
