@@ -175,11 +175,13 @@ class ConnectionManager {
   Future<void> _tryAutoConnect(String host, int port, int peerNonce, String discoveryHash) async {
     final db = ref.read(databaseProvider);
     final pairedDevices = await db.getPairedDevices();
-    final knownFingerprints = pairedDevices.map((d) => d.certFingerprint).toList();
+    
+    // Check hashes against the stable deviceId
+    final knownIds = pairedDevices.map((d) => d.deviceId).toList();
 
-    final matchedFp = CryptoUtils.verifyDiscoveryHash(discoveryHash, knownFingerprints);
-    if (matchedFp != null) {
-      developer.log('Auto-connecting to paired device (fingerprint match: ${matchedFp.substring(0, 8)}...)');
+    final matchedId = CryptoUtils.verifyDiscoveryHash(discoveryHash, knownIds);
+    if (matchedId != null) {
+      developer.log('Auto-connecting to paired device (ID match: $matchedId)');
       final mdns = ref.read(mdnsDiscoveryProvider);
       final myNonce = mdns.discoverySessionNonce;
       if (myNonce > peerNonce) {
