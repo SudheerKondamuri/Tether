@@ -127,11 +127,10 @@ class MdnsDiscovery {
 
   /// Compute our own discovery hash for broadcasting.
   Future<String?> _getOwnDiscoveryHash() async {
-    if (_ownCertFingerprint == null) {
-      final (certPath, _) = await TlsManager.ensureCertificate();
-      _ownCertFingerprint = await TlsManager.fingerprint(certPath);
-    }
-    return CryptoUtils.computeDiscoveryHash(_ownCertFingerprint!);
+    final db = ref.read(databaseProvider);
+    final myId = await db.getSetting('device_id');
+    if (myId == null || myId.isEmpty) return null;
+    return CryptoUtils.computeDiscoveryHash(myId); // Hash the stable ID, NOT the cert
   }
 
   void resetSilenceCounter() {
@@ -152,12 +151,17 @@ class MdnsDiscovery {
     int retries = 0;
     while (retries < 5) {
       try {
-        final socket = await RawDatagramSocket.bind(address, port);
+        final socket = await RawDatagramSocket.bind(
+          address, 
+          port, 
+          reuseAddress: true, 
+          reusePort: true, // MANDATORY: Bypasses OS UDP locks after process eviction
+        );
         socket.broadcastEnabled = true;
         return socket;
       } catch (e) {
         retries++;
-        if (retries >= 5) rethrow;
+        if (retries >= 5) return null;
         await Future.delayed(const Duration(seconds: 2));
       }
     }
