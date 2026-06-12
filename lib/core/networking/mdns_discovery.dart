@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/constants.dart';
 import 'package:tether/shared/platform_utils.dart';
 import 'package:tether/core/database/database_provider.dart';
-import 'package:tether/core/networking/tls_manager.dart';
+
 
 /// Rotating cryptographic hashes for secure peer identification.
 class CryptoUtils {
@@ -123,7 +123,6 @@ class MdnsDiscovery {
 
   MdnsDiscovery({required this.ref});
 
-  String? _ownCertFingerprint;
 
   /// Compute our own discovery hash for broadcasting.
   Future<String?> _getOwnDiscoveryHash() async {
