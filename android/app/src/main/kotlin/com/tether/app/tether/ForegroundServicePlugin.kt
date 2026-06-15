@@ -4,6 +4,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -16,39 +18,42 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.FlutterInjector
 
 /**
- * Foreground service to keep the app alive for persistent connections.
- * Runs a headless background FlutterEngine to manage sockets and sync independent of UI.
+ * Foreground service that runs the native Kotlin networking layer.
+ *
+ * Architecture: KDE Connect model — all TCP sockets, TLS handshakes, UDP/mDNS
+ * discovery, heartbeats, and auto-reconnection run natively in Kotlin Coroutines.
+ * The Flutter/Dart layer is strictly a UI remote control that sends commands
+ * via MethodChannel and reads state from SQLite.
+ *
+ * Survives:
+ * - LMKD (Low Memory Killer Daemon) — native service, no Dart VM to kill
+ * - Doze — holds PARTIAL_WAKE_LOCK + WIFI_MODE_FULL_HIGH_PERF
+ * - Task eviction — stopWithTask=false in manifest, onTaskRemoved is no-op
  */
-class ForegroundServicePlugin : Service() {
-    private var multicastLock: WifiManager.MulticastLock? = null
-    private var backgroundEngine: FlutterEngine? = null
-    private var networkReceiver: BroadcastReceiver? = null
-    private var isHotspotEnabled = false
-    private var commandReceiver: BroadcastReceiver? = null
-
-    private fun checkCurrentHotspotState(): Boolean {
-        return try {
-            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val method = wifiManager.javaClass.getMethod("getWifiApState")
-            val state = method.invoke(wifiManager) as Int
-            state == 13 // 13 = WIFI_AP_STATE_ENABLED
-        } catch (e: Exception) {
-            false
-        }
-    }
+class ForegroundServicePlugin : Service(),
+    NativeConnectionManager.ConnectionListener,
+    NativeDiscovery.DiscoveryListener {
 
     companion object {
+        private const val TAG = "TetherService"
         private const val CHANNEL = "com.tether/foreground"
         private const val NOTIFICATION_CHANNEL_ID = "tether_foreground"
         private const val NOTIFICATION_ID = 1
 
+        // Static reference for MethodChannel bridge from UI
+        private var connectionManager: NativeConnectionManager? = null
+        private var discovery: NativeDiscovery? = null
+
+        /**
+         * Register the MethodChannel on the UI FlutterEngine.
+         * Called from [MainActivity.configureFlutterEngine].
+         */
         fun register(engine: FlutterEngine, context: Context) {
             val channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
             channel.setMethodCallHandler { call, result ->
@@ -71,11 +76,30 @@ class ForegroundServicePlugin : Service() {
                         context.stopService(intent)
                         result.success(true)
                     }
+                    "connectTo" -> {
+                        val host = call.argument<String>("host")
+                        val port = call.argument<Int>("port") ?: TetherConstants.TCP_PORT
+                        if (host != null) {
+                            connectionManager?.connectTo(host, port)
+                            result.success(true)
+                        } else {
+                            result.error("ARGS", "host is required", null)
+                        }
+                    }
+                    "disconnect" -> {
+                        connectionManager?.disconnect()
+                        result.success(true)
+                    }
+                    "getConnectionState" -> {
+                        result.success(connectionManager?.getConnectionState() ?: "disconnected")
+                    }
+                    "getPeerInfo" -> {
+                        result.success(connectionManager?.getConnectedDeviceInfo())
+                    }
                     "isIgnoringBatteryOptimizations" -> {
                         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                        val packageName = context.packageName
                         val ignoring = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            pm.isIgnoringBatteryOptimizations(packageName)
+                            pm.isIgnoringBatteryOptimizations(context.packageName)
                         } else {
                             true
                         }
@@ -84,10 +108,9 @@ class ForegroundServicePlugin : Service() {
                     "requestIgnoreBatteryOptimizations" -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                            val packageName = context.packageName
-                            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                            if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
                                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                    data = Uri.parse("package:$packageName")
+                                    data = Uri.parse("package:${context.packageName}")
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                 }
                                 context.startActivity(intent)
@@ -100,27 +123,6 @@ class ForegroundServicePlugin : Service() {
                     "openAutostartSettings" -> {
                         val opened = openAutostartSettings(context)
                         result.success(opened)
-                    }
-                    "sendBackgroundCommand" -> {
-                        val command = call.argument<String>("command")
-                        val args = call.argument<Map<String, Any>>("args")
-                        val intent = Intent("com.tether.BACKGROUND_COMMAND").apply {
-                            setPackage(context.packageName)
-                            putExtra("command", command)
-                            if (args != null) {
-                                for ((key, value) in args) {
-                                    when (value) {
-                                        is String -> putExtra(key, value)
-                                        is Int -> putExtra(key, value)
-                                        is Long -> putExtra(key, value)
-                                        is Double -> putExtra(key, value)
-                                        is Boolean -> putExtra(key, value)
-                                    }
-                                }
-                            }
-                        }
-                        context.sendBroadcast(intent, "com.tether.INTERNAL_BROADCAST")
-                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }
@@ -177,7 +179,6 @@ class ForegroundServicePlugin : Service() {
                 }
             }
 
-            // Always add a fallback intent to app details screen
             val fallbackIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = Uri.parse("package:${context.packageName}")
             }
@@ -187,12 +188,9 @@ class ForegroundServicePlugin : Service() {
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     context.startActivity(intent)
                     return true
-                } catch (_: Exception) {
-                    // Try next one
-                }
+                } catch (_: Exception) {}
             }
 
-            // Fallback
             return try {
                 fallbackIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 context.startActivity(fallbackIntent)
@@ -203,58 +201,194 @@ class ForegroundServicePlugin : Service() {
         }
     }
 
+    // ─── OS Locks ───
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private var networkReceiver: BroadcastReceiver? = null
+    private var isHotspotEnabled = false
+
+    // ─── Native Clipboard Monitor ───
+    private var clipboardManager: ClipboardManager? = null
+    private var lastClipContent: String = ""
+    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+        handleClipboardChange()
+    }
+
+    // ─── Service Lifecycle ───
+
     override fun onCreate() {
         super.onCreate()
         startNotificationForeground()
-        initMulticastLock()
+        acquireAllLocks()
         registerNetworkTracking()
-        
-        // Register receiver for cross-process commands from the UI process
-        val filter = IntentFilter("com.tether.BACKGROUND_COMMAND")
-        commandReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action == "com.tether.BACKGROUND_COMMAND") {
-                    val command = intent.getStringExtra("command")
-                    
-                    val argsMap = HashMap<String, Any>()
-                    intent.extras?.let { extras ->
-                        for (key in extras.keySet()) {
-                            if (key != "command") {
-                                extras.get(key)?.let { value ->
-                                    argsMap[key] = value
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Forward to background Dart engine
-                    backgroundEngine?.let { engine ->
-                        val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "com.tether/foreground")
-                        channel.invokeMethod("onBackgroundCommand", mapOf(
-                            "command" to command,
-                            "args" to argsMap
-                        ))
-                    }
-                }
-            }
-        }
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(commandReceiver, filter, "com.tether.INTERNAL_BROADCAST", null, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(commandReceiver, filter, "com.tether.INTERNAL_BROADCAST", null)
-        }
-        
-        // Start the background engine unconditionally when service is created
-        triggerBackgroundDartIsolate()
+        startNativeNetworking()
+        startClipboardMonitor()
+        Log.i(TAG, "Service created — native networking started")
     }
 
-    private fun initMulticastLock() {
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        multicastLock = wifiManager.createMulticastLock("Tether::MulticastLock").apply {
-            setReferenceCounted(false)
+    override fun onDestroy() {
+        Log.i(TAG, "Service destroying")
+        stopClipboardMonitor()
+        stopNativeNetworking()
+        releaseAllLocks()
+        unregisterNetworkTracking()
+        super.onDestroy()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Intentionally empty — service outlives the activity task.
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    // ─── Native Networking ───
+
+    private fun startNativeNetworking() {
+        val db = TetherDatabase.getInstance(applicationContext)
+
+        val connMgr = NativeConnectionManager(applicationContext, this)
+        connectionManager = connMgr
+        connMgr.startServer()
+
+        val disco = NativeDiscovery(
+            context = applicationContext,
+            deviceId = db.getDeviceId(),
+            deviceName = db.getDeviceName(),
+            listener = this
+        )
+        discovery = disco
+        disco.start()
+    }
+
+    private fun stopNativeNetworking() {
+        discovery?.stop()
+        discovery = null
+
+        connectionManager?.shutdown()
+        connectionManager = null
+    }
+
+    // ─── ConnectionListener Callbacks ───
+
+    override fun onConnectionStateChanged(state: String) {
+        Log.i(TAG, "Connection state: $state")
+        updateNotification(state)
+    }
+
+    override fun onDeviceConnected(device: NativeConnectionManager.ConnectedDevice) {
+        Log.i(TAG, "Connected to ${device.name} (${device.platform}) @ ${device.ip}")
+        updateNotification("Connected to ${device.name}")
+    }
+
+    override fun onDeviceDisconnected() {
+        Log.i(TAG, "Disconnected")
+        updateNotification("disconnected")
+    }
+
+    override fun onClipboardReceived(content: String, dataType: String) {
+        Log.d(TAG, "Clipboard received: ${content.take(50)}...")
+        // Set the clipboard content natively
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            lastClipContent = content // Prevent echo
+            val clip = ClipData.newPlainText("Tether", content)
+            cm.setPrimaryClip(clip)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set clipboard: ${e.message}")
         }
     }
+
+    override fun onNotificationReceived(payload: NotificationPayload) {
+        Log.d(TAG, "Notification received: ${payload.title}")
+        // TODO: Display notification via NotificationManager
+    }
+
+    // ─── DiscoveryListener Callbacks ───
+
+    override fun onPeerDiscovered(peer: NativeDiscovery.DiscoveredPeer) {
+        Log.i(TAG, "Peer discovered: ${peer.name} @ ${peer.ip}:${peer.port}")
+        connectionManager?.onPeerDiscovered(peer)
+    }
+
+    // ─── Native Clipboard Monitor ───
+
+    private fun startClipboardMonitor() {
+        clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboardManager?.addPrimaryClipChangedListener(clipboardListener)
+        Log.d(TAG, "Clipboard monitor started")
+    }
+
+    private fun stopClipboardMonitor() {
+        clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
+        clipboardManager = null
+    }
+
+    private fun handleClipboardChange() {
+        try {
+            val cm = clipboardManager ?: return
+            if (!cm.hasPrimaryClip()) return
+
+            val clip = cm.primaryClip ?: return
+            if (clip.itemCount == 0) return
+
+            val content = clip.getItemAt(0)?.text?.toString() ?: return
+            if (content == lastClipContent) return // Skip echo
+            if (content.isBlank()) return
+
+            lastClipContent = content
+            connectionManager?.sendClipboard(content)
+        } catch (e: Exception) {
+            Log.w(TAG, "Clipboard change error: ${e.message}")
+        }
+    }
+
+    // ─── OS Locks ───
+
+    private fun acquireAllLocks() {
+        // WakeLock — prevent CPU sleep
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "Tether::WakeLock"
+        ).apply {
+            acquire()
+        }
+
+        // WifiLock — prevent WiFi radio sleep
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION")
+        wifiLock = wifiManager.createWifiLock(
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+            "Tether::WifiLock"
+        ).apply {
+            acquire()
+        }
+
+        // MulticastLock — required for mDNS/NSD
+        multicastLock = wifiManager.createMulticastLock("Tether::MulticastLock").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+
+        Log.i(TAG, "All OS locks acquired")
+    }
+
+    private fun releaseAllLocks() {
+        try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
+        try { if (wifiLock?.isHeld == true) wifiLock?.release() } catch (_: Exception) {}
+        try { if (multicastLock?.isHeld == true) multicastLock?.release() } catch (_: Exception) {}
+        wakeLock = null
+        wifiLock = null
+        multicastLock = null
+        Log.i(TAG, "All OS locks released")
+    }
+
+    // ─── Network Tracking ───
 
     private fun registerNetworkTracking() {
         isHotspotEnabled = checkCurrentHotspotState()
@@ -267,99 +401,50 @@ class ForegroundServicePlugin : Service() {
 
         networkReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                val action = intent.action
-                if ("android.net.wifi.WIFI_AP_STATE_CHANGED" == action) {
+                if ("android.net.wifi.WIFI_AP_STATE_CHANGED" == intent.action) {
                     val state = intent.getIntExtra("wifi_state", 11)
                     isHotspotEnabled = (state == 13)
                 }
-                
+
                 val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                 @Suppress("DEPRECATION")
                 val activeNetwork = cm.activeNetworkInfo
                 @Suppress("DEPRECATION")
                 val isWifiConnected = activeNetwork != null && activeNetwork.type == ConnectivityManager.TYPE_WIFI
-                
+
                 manageNetworkPipeline(enabled = isWifiConnected || isHotspotEnabled)
             }
         }
         registerReceiver(networkReceiver, filter)
     }
 
+    private fun unregisterNetworkTracking() {
+        networkReceiver?.let {
+            try { unregisterReceiver(it) } catch (_: Exception) {}
+        }
+        networkReceiver = null
+    }
+
     private fun manageNetworkPipeline(enabled: Boolean) {
         if (enabled) {
-            if (multicastLock?.isHeld == false) {
-                multicastLock?.acquire()
-            }
+            if (multicastLock?.isHeld == false) multicastLock?.acquire()
         } else {
-            if (multicastLock?.isHeld == true) {
-                multicastLock?.release()
-            }
+            if (multicastLock?.isHeld == true) multicastLock?.release()
         }
     }
 
-    private fun triggerBackgroundDartIsolate() {
-        if (backgroundEngine != null) return
-        
-        val loader = FlutterInjector.instance().flutterLoader()
-        loader.startInitialization(applicationContext)
-        loader.ensureInitializationComplete(applicationContext, null)
-        
-        // Let Flutter automatically register all plugins via GeneratedPluginRegistrant.
-        // This is strictly required so that path_provider, drift, jni_flutter, etc.
-        // are properly initialized in the background engine.
-        backgroundEngine = FlutterEngine(applicationContext)
-
-        // Register custom MethodChannel plugins on background engine
-        val clipboardPlugin = ClipboardPlugin(applicationContext)
-        clipboardPlugin.register(backgroundEngine!!)
-        NotificationPlugin.register(backgroundEngine!!, applicationContext)
-
-        // Use 2-parameter DartEntrypoint — auto-resolves the default library.
-        // The 3-parameter version with "lib/main.dart" fails in same-process
-        // mode because the shared Dart VM registers libraries under package URIs
-        // (package:tether/main.dart), not raw file paths.
-        val entrypoint = DartExecutor.DartEntrypoint(
-            loader.findAppBundlePath(),
-            "backgroundMain"
-        )
-        backgroundEngine?.dartExecutor?.executeDartEntrypoint(entrypoint)
-    }
-
-    private fun teardownBackgroundDartIsolate() {
-        backgroundEngine?.let {
-            it.destroy()
+    private fun checkCurrentHotspotState(): Boolean {
+        return try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val method = wifiManager.javaClass.getMethod("getWifiApState")
+            val state = method.invoke(wifiManager) as Int
+            state == 13
+        } catch (_: Exception) {
+            false
         }
-        backgroundEngine = null
     }
 
-    override fun onDestroy() {
-        if (multicastLock?.isHeld == true) multicastLock?.release()
-        if (networkReceiver != null) {
-            try {
-                unregisterReceiver(networkReceiver)
-            } catch (_: Exception) {}
-        }
-        commandReceiver?.let {
-            try {
-                unregisterReceiver(it)
-            } catch (_: Exception) {}
-        }
-        commandReceiver = null
-        teardownBackgroundDartIsolate()
-        super.onDestroy()
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        // Do NOT call stopSelf(). The service outlives the activity task stack.
-        // This is intentionally empty to prevent the default behavior of
-        // stopping the service when the user swipes the app from recents.
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
+    // ─── Notification ───
 
     private fun startNotificationForeground() {
         createNotificationChannel()
@@ -378,6 +463,31 @@ class ForegroundServicePlugin : Service() {
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun updateNotification(status: String) {
+        val text = when (status) {
+            "connected" -> "Connected"
+            "searching" -> "Searching for peers..."
+            "connecting" -> "Connecting..."
+            "disconnected" -> "Background sync active"
+            else -> status
+        }
+
+        try {
+            val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle("Tether")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .build()
+
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update notification: ${e.message}")
         }
     }
 
