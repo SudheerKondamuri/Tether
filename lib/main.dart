@@ -1,7 +1,4 @@
-import 'dart:async';
-import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/platform_utils.dart';
@@ -18,10 +15,11 @@ import 'package:tether/core/database/database_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize database before anything else.
-  // On Android, this polls for the background DriftIsolate server
-  // (kicking the foreground service if needed) and connects as a client.
-  // On Desktop, this opens a direct single-process NativeDatabase.
+  // Initialize database.
+  // On Android: opens a direct single-process NativeDatabase (the native
+  // Kotlin service accesses tether.db via android.database.sqlite, WAL
+  // mode ensures concurrent access safety).
+  // On Desktop: opens a direct single-process NativeDatabase.
   await initDatabase();
 
   runApp(const ProviderScope(child: TetherApp()));
@@ -46,13 +44,14 @@ class _TetherAppState extends ConsumerState<TetherApp> {
 
   Future<void> _initServices() async {
     if (PlatformUtils.isAndroid) {
-      // On Android, the foreground service is already running (started during
-      // initDatabase cold-start polling). The background Dart engine handles
-      // all networking. The UI process only reads state from the shared DB.
+      // On Android, the native Kotlin ForegroundService handles ALL
+      // networking (TCP, TLS, mDNS, UDP, heartbeats, auto-reconnect).
+      // The UI process is strictly a remote control — it reads state
+      // from SQLite and sends commands via MethodChannel.
       return;
     }
 
-    // Start connection manager (TCP server)
+    // Desktop: start the Dart networking stack
     final connectionManager = ref.read(connectionManagerProvider);
     await connectionManager.init();
     await connectionManager.startServer();
@@ -87,87 +86,9 @@ class _TetherAppState extends ConsumerState<TetherApp> {
       home: PlatformUtils.platformWidget(
         linux: () => const LinuxShell(),
         android: () => const AndroidShell(),
-        // Future: windows: () => const WindowsShell(),
-        // Future: macos: () => const MacShell(),
         fallback: () => const LinuxShell(),
       ),
     );
   }
 }
 
-// ─── Headless Background Engine Entrypoint ───
-
-@pragma('vm:entry-point')
-void backgroundMain() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize the DriftIsolate server — this isolate owns the database file.
-  // The UI isolate will find the connect port via IsolateNameServer.
-  await initDatabase(isBackground: true);
-
-  final container = ProviderContainer();
-
-  // Initialize network stack scoped exclusively inside background engine
-  final connectionManager = container.read(connectionManagerProvider);
-  final mdns = container.read(mdnsDiscoveryProvider);
-
-  // Mark this as the background isolate for routing decisions
-  ConnectionManager.isBackgroundIsolate = true;
-
-  await connectionManager.init();
-  await connectionManager.startServer();
-  await mdns.startBroadcast(
-    deviceName: connectionManager.deviceName,
-    port: TetherConstants.tcpPort,
-  );
-  await mdns.startDiscovery();
-
-  // Start clipboard sync
-  final clipboardService = container.read(clipboardServiceProvider);
-  clipboardService.start();
-
-  // Start notification sync
-  final notificationService = container.read(notificationBridgeProvider);
-  await notificationService.start();
-
-  // Start file serving
-  final fileService = container.read(fileServiceProvider);
-  await fileService.start();
-
-  // MethodChannel command handler for cross-isolate commands from UI
-  const MethodChannel(TetherConstants.foregroundServiceChannel)
-      .setMethodCallHandler((call) async {
-    if (call.method == 'onBackgroundCommand') {
-      final args = call.arguments;
-      if (args is Map) {
-        final command = args['command'];
-        final commandArgs = args['args'];
-        if (command == 'CONNECT_TO' && commandArgs is Map) {
-          final host = commandArgs['host'];
-          final port = commandArgs['port'];
-          if (host != null) {
-            connectionManager.connectTo(
-              host: host as String,
-              port: (port as int?) ?? TetherConstants.tcpPort,
-            );
-          }
-        } else if (command == 'DISCONNECT') {
-          connectionManager.disconnect();
-        }
-      }
-    }
-  });
-
-  // Periodically run passive checkpoint on the SQLite database to prevent
-  // WAL file bloat. The DriftIsolate server handles the actual DB writes,
-  // but the checkpoint pragma is safe to issue from any client.
-  Timer.periodic(const Duration(minutes: 30), (_) async {
-    try {
-      final db = container.read(databaseProvider);
-      await db.customStatement('PRAGMA wal_checkpoint(PASSIVE);');
-      developer.log('SQLite WAL passive checkpoint completed.');
-    } catch (e) {
-      developer.log('SQLite WAL checkpoint failed: $e');
-    }
-  });
-}
