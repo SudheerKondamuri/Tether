@@ -37,6 +37,12 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        resources {
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        }
+    }
 }
 
 flutter {
@@ -45,4 +51,8 @@ flutter {
 
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    // Native networking layer (KDE Connect architecture)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
 }
