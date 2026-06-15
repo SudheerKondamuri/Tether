@@ -12,6 +12,7 @@
     <!-- Foreground service for persistent TCP connection -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Notification access (user must grant manually) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
