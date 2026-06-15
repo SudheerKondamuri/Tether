@@ -75,6 +75,8 @@ class ConnectionManager {
   final TcpServer _server = TcpServer();
   final TcpClient _client = TcpClient();
 
+  /// No longer needed — there is no background Dart isolate.
+  /// Kept for API compatibility; always false.
   static bool isBackgroundIsolate = false;
   String _deviceId = const Uuid().v4();
   String _deviceName = Platform.localHostname;
@@ -271,15 +273,13 @@ class ConnectionManager {
     required String host,
     int port = TetherConstants.tcpPort,
   }) async {
-    if (PlatformUtils.isAndroid && !isBackgroundIsolate) {
+    if (PlatformUtils.isAndroid) {
+      // Delegate to native Kotlin ForegroundService via direct MethodChannel
       try {
         await const MethodChannel(TetherConstants.foregroundServiceChannel)
-            .invokeMethod('sendBackgroundCommand', {
-          'command': 'CONNECT_TO',
-          'args': {
-            'host': host,
-            'port': port,
-          },
+            .invokeMethod('connectTo', {
+          'host': host,
+          'port': port,
         });
         
         final db = ref.read(databaseProvider);
@@ -300,7 +300,7 @@ class ConnectionManager {
         }
         return false;
       } catch (e) {
-        developer.log('Failed to delegate connectTo to background service: $e');
+        developer.log('Failed to delegate connectTo to native service: $e');
         return false;
       }
     }
@@ -482,14 +482,13 @@ class ConnectionManager {
   /// Disconnect from the current peer (user-initiated).
   /// This sets the explicit flag to prevent auto-reconnect.
   Future<void> disconnect() async {
-    if (PlatformUtils.isAndroid && !isBackgroundIsolate) {
+    if (PlatformUtils.isAndroid) {
+      // Delegate to native Kotlin ForegroundService via direct MethodChannel
       try {
         await const MethodChannel(TetherConstants.foregroundServiceChannel)
-            .invokeMethod('sendBackgroundCommand', {
-          'command': 'DISCONNECT',
-        });
+            .invokeMethod('disconnect');
       } catch (e) {
-        developer.log('Failed to delegate disconnect to background service: $e');
+        developer.log('Failed to delegate disconnect to native service: $e');
       }
       return;
     }
