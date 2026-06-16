@@ -26,6 +26,8 @@ class TetherDatabase private constructor(context: Context) {
         private const val DB_NAME = "tether.db"
         private const val SETTINGS_TABLE = "settings"
         private const val PAIRED_DEVICES_TABLE = "paired_devices"
+        private const val CLIPBOARD_ENTRIES_TABLE = "clipboard_entries"
+        private const val MAX_CLIPBOARD_ENTRIES = 10
 
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DEVICE_NAME = "device_name"
@@ -51,6 +53,14 @@ class TetherDatabase private constructor(context: Context) {
         val lastIp: String?,
         val lastPort: Int?,
         val pairedAt: Long // epoch milliseconds (converted to/from epoch seconds in SQLite)
+    )
+
+    data class ClipboardEntryRecord(
+        val id: Int,
+        val content: String,
+        val dataType: String,
+        val sourceDevice: String,
+        val timestamp: Long // epoch seconds (Drift convention)
     )
 
     private val lock = ReentrantLock()
@@ -123,6 +133,18 @@ class TetherDatabase private constructor(context: Context) {
                     last_ip TEXT,
                     last_port INTEGER,
                     paired_at INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $CLIPBOARD_ENTRIES_TABLE (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content TEXT NOT NULL,
+                    data_type TEXT NOT NULL DEFAULT 'TEXT',
+                    source_device TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL
                 )
                 """.trimIndent()
             )
@@ -277,6 +299,109 @@ class TetherDatabase private constructor(context: Context) {
     }
 
     // ---------------------------------------------------------------
+    // Clipboard entries
+    // ---------------------------------------------------------------
+
+    /**
+     * Insert a new clipboard entry and enforce the 10-item cap.
+     * Drift stores DateTime as epoch seconds.
+     */
+    fun insertClipboardEntry(content: String, dataType: String, sourceDevice: String) {
+        lock.withLock {
+            val database = db ?: return
+            try {
+                // Ensure table exists (handles case where Drift hasn't created it yet)
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS $CLIPBOARD_ENTRIES_TABLE (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        content TEXT NOT NULL,
+                        data_type TEXT NOT NULL DEFAULT 'TEXT',
+                        source_device TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+
+                val cv = ContentValues(4).apply {
+                    put("content", content)
+                    put("data_type", dataType)
+                    put("source_device", sourceDevice)
+                    put("timestamp", System.currentTimeMillis() / 1000L) // Drift uses epoch seconds
+                }
+                database.insert(CLIPBOARD_ENTRIES_TABLE, null, cv)
+                Log.d(TAG, "Inserted clipboard entry: ${content.take(50)}...")
+
+                // Enforce max entries limit
+                enforceClipboardLimitInternal(database)
+            } catch (e: Exception) {
+                Log.e(TAG, "insertClipboardEntry failed", e)
+            }
+        }
+    }
+
+    /**
+     * Return the latest clipboard entries, ordered newest first.
+     */
+    fun getClipboardEntries(limit: Int = MAX_CLIPBOARD_ENTRIES): List<ClipboardEntryRecord> = lock.withLock {
+        val database = db ?: return emptyList()
+        val result = mutableListOf<ClipboardEntryRecord>()
+        try {
+            database.rawQuery(
+                """
+                SELECT id, content, data_type, source_device, timestamp
+                FROM $CLIPBOARD_ENTRIES_TABLE
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """.trimIndent(),
+                arrayOf(limit.toString())
+            ).use { cursor ->
+                val colId = cursor.getColumnIndexOrThrow("id")
+                val colContent = cursor.getColumnIndexOrThrow("content")
+                val colDataType = cursor.getColumnIndexOrThrow("data_type")
+                val colSource = cursor.getColumnIndexOrThrow("source_device")
+                val colTimestamp = cursor.getColumnIndexOrThrow("timestamp")
+
+                while (cursor.moveToNext()) {
+                    result.add(
+                        ClipboardEntryRecord(
+                            id = cursor.getInt(colId),
+                            content = cursor.getString(colContent),
+                            dataType = cursor.getString(colDataType),
+                            sourceDevice = cursor.getString(colSource),
+                            timestamp = cursor.getLong(colTimestamp)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getClipboardEntries() failed", e)
+        }
+        return result
+    }
+
+    /**
+     * Delete oldest entries beyond MAX_CLIPBOARD_ENTRIES.
+     * Must be called while lock is held.
+     */
+    private fun enforceClipboardLimitInternal(database: SQLiteDatabase) {
+        try {
+            database.execSQL(
+                """
+                DELETE FROM $CLIPBOARD_ENTRIES_TABLE
+                WHERE id NOT IN (
+                    SELECT id FROM $CLIPBOARD_ENTRIES_TABLE
+                    ORDER BY timestamp DESC
+                    LIMIT $MAX_CLIPBOARD_ENTRIES
+                )
+                """.trimIndent()
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "enforceClipboardLimit failed", e)
+        }
+    }
+
+    // ---------------------------------------------------------------
     // Identity helpers
     // ---------------------------------------------------------------
 
@@ -300,7 +425,8 @@ class TetherDatabase private constructor(context: Context) {
      */
     fun getDeviceName(): String = lock.withLock {
         val existing = getSettingInternal(KEY_DEVICE_NAME)
-        if (existing != null) return existing
+        // Reject "localhost" — Dart's Platform.localHostname returns this on Android
+        if (existing != null && existing != "localhost") return existing
 
         val fallback = Build.MODEL ?: "Android Device"
         setSettingInternal(KEY_DEVICE_NAME, fallback)

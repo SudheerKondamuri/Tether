@@ -19,7 +19,7 @@ class TetherConstants {
 
   // ─── Clipboard ───
   static const Duration clipboardPollInterval = Duration(milliseconds: 800);
-  static const int clipboardMaxHistory = 15;
+  static const int clipboardMaxHistory = 10;
   static const Duration otpSnackbarDuration = Duration(seconds: 30);
 
   // ─── File Transfer ───

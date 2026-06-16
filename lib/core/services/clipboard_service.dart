@@ -136,7 +136,7 @@ class ClipboardService {
     if (text.isEmpty) return;
 
     final type = _detectType(text);
-    final source = payload['source'] as String? ?? 'remote';
+    final source = _connectionManager.peer?.name ?? 'remote';
 
     final entry = ClipEntry(
       content: text,
@@ -245,5 +245,16 @@ final clipboardServiceProvider = Provider<ClipboardService>((ref) {
 
 final clipboardHistoryProvider = StreamProvider<List<ClipboardEntry>>((ref) {
   final db = ref.watch(databaseProvider);
+
+  if (Platform.isAndroid) {
+    // CRITICAL: Kotlin writes clipboard entries directly to SQLite via
+    // TetherDatabase.kt, bypassing Drift's internal change notification
+    // system. Use periodic polling so the UI sees entries written by the
+    // native foreground service.
+    return Stream.periodic(const Duration(seconds: 1), (i) => i)
+        .asyncMap((_) => db.getClipboardEntries());
+  }
+
+  // Desktop: Drift's watch() works because Dart writes the entries itself
   return db.watchClipboardEntries();
 });

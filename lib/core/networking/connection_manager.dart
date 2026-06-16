@@ -79,7 +79,7 @@ class ConnectionManager {
   /// Kept for API compatibility; always false.
   static bool isBackgroundIsolate = false;
   String _deviceId = const Uuid().v4();
-  String _deviceName = Platform.localHostname;
+  String _deviceName = 'Unknown';
 
   String get deviceId => _deviceId;
   String get deviceName => _deviceName;
@@ -123,9 +123,16 @@ class ConnectionManager {
 
     // Load or generate device Name
     var storedName = await db.getSetting('device_name');
-    if (storedName == null || storedName.isEmpty) {
-      storedName = Platform.localHostname;
-      await db.setSetting('device_name', storedName);
+    if (storedName == null || storedName.isEmpty || storedName == 'localhost') {
+      if (PlatformUtils.isAndroid) {
+        // On Android, don't write a name from Dart — let Kotlin's
+        // TetherDatabase.getDeviceName() handle it with Build.MODEL.
+        // Dart's Platform.localHostname returns 'localhost' on Android.
+        storedName = 'Android Device';
+      } else {
+        storedName = await _resolveHostname();
+        await db.setSetting('device_name', storedName);
+      }
     }
     _deviceName = storedName;
 
@@ -487,6 +494,18 @@ class ConnectionManager {
       try {
         await const MethodChannel(TetherConstants.foregroundServiceChannel)
             .invokeMethod('disconnect');
+        
+        // Poll DB for state change — Kotlin writes bypass Drift's watch notifications
+        final db = ref.read(databaseProvider);
+        int attempts = 0;
+        while (attempts < 12) { // 2.4 seconds max
+          await Future.delayed(const Duration(milliseconds: 200));
+          final stateVal = await db.getSetting('connection_state');
+          if (stateVal == TetherConnectionState.disconnected.name) {
+            break;
+          }
+          attempts++;
+        }
       } catch (e) {
         developer.log('Failed to delegate disconnect to native service: $e');
       }
@@ -524,6 +543,42 @@ class ConnectionManager {
   }
 }
 
+/// Resolve the device hostname using multiple fallback strategies.
+/// Platform.localHostname often returns 'localhost' on Linux containers,
+/// chroots, and some Arch Linux configurations.
+Future<String> _resolveHostname() async {
+  // Strategy 1: Platform.localHostname
+  final platformName = Platform.localHostname;
+  if (platformName.isNotEmpty && platformName != 'localhost') {
+    return platformName;
+  }
+
+  // Strategy 2: Read /etc/hostname
+  try {
+    final file = File('/etc/hostname');
+    if (await file.exists()) {
+      final name = (await file.readAsString()).trim();
+      if (name.isNotEmpty && name != 'localhost') {
+        return name;
+      }
+    }
+  } catch (_) {}
+
+  // Strategy 3: Run hostname command
+  try {
+    final result = await Process.run('uname', ['-n']);
+    if (result.exitCode == 0) {
+      final name = (result.stdout as String).trim();
+      if (name.isNotEmpty && name != 'localhost') {
+        return name;
+      }
+    }
+  } catch (_) {}
+
+  // Final fallback
+  return platformName.isNotEmpty ? platformName : 'Unknown-Device';
+}
+
 // ─── Riverpod Providers ───
 
 final connectionManagerProvider = Provider<ConnectionManager>((ref) {
@@ -534,14 +589,21 @@ final connectionManagerProvider = Provider<ConnectionManager>((ref) {
 
 final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
   if (PlatformUtils.isAndroid) {
+    // CRITICAL: Use periodic polling instead of Drift's watchSetting().
+    // The Kotlin NativeConnectionManager writes connection_state directly
+    // to SQLite via TetherDatabase.kt, bypassing Drift's internal change
+    // notification system. Drift's watch() only fires when Drift itself
+    // writes — so the UI would never see Kotlin's state updates.
     final db = ref.watch(databaseProvider);
-    return db.watchSetting('connection_state').map((val) {
+    return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
+        .asyncMap((_) => db.getSetting('connection_state'))
+        .map((val) {
       if (val == null) return TetherConnectionState.disconnected;
       return TetherConnectionState.values.firstWhere(
         (e) => e.name == val,
         orElse: () => TetherConnectionState.disconnected,
       );
-    });
+    }).distinct();
   }
   final manager = ref.watch(connectionManagerProvider);
   return manager.stateStream;
@@ -549,14 +611,22 @@ final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
 
 final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
   if (PlatformUtils.isAndroid) {
+    // CRITICAL: Same polling strategy as connectionStateProvider.
+    // Kotlin writes connected_peer directly to SQLite, bypassing Drift.
     final db = ref.watch(databaseProvider);
-    return db.watchSetting('connected_peer').map((val) {
+    return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
+        .asyncMap((_) => db.getSetting('connected_peer'))
+        .map((val) {
       if (val == null || val.isEmpty) return null;
       try {
         return ConnectedDevice.fromJson(jsonDecode(val) as Map<String, dynamic>);
       } catch (_) {
         return null;
       }
+    }).distinct((a, b) {
+      if (a == null && b == null) return true;
+      if (a == null || b == null) return false;
+      return a.deviceId == b.deviceId && a.ip == b.ip;
     });
   }
   final manager = ref.watch(connectionManagerProvider);

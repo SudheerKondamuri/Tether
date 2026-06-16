@@ -416,8 +416,12 @@ final mdnsDiscoveryProvider = Provider<MdnsDiscovery>((ref) {
 
 final discoveredDevicesProvider = StreamProvider<List<DiscoveredDevice>>((ref) {
   if (PlatformUtils.isAndroid) {
+    // CRITICAL: Use periodic polling instead of Drift's watchSetting().
+    // Kotlin background service writes directly to SQLite bypassing Drift.
     final db = ref.watch(databaseProvider);
-    return db.watchSetting('discovered_devices').map((val) {
+    return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
+        .asyncMap((_) => db.getSetting('discovered_devices'))
+        .map((val) {
       if (val == null || val.isEmpty) return [];
       try {
         final List<dynamic> list = jsonDecode(val) as List<dynamic>;

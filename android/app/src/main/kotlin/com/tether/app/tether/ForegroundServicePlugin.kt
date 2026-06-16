@@ -22,6 +22,15 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import kotlinx.coroutines.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
+
 
 /**
  * Foreground service that runs the native Kotlin networking layer.
@@ -215,6 +224,65 @@ class ForegroundServicePlugin : Service(),
         handleClipboardChange()
     }
 
+    // ─── Discovered Device Tracking ───
+    data class DiscoveredPeerRecord(
+        val name: String,
+        val ip: String,
+        val port: Int,
+        val nonce: Int,
+        val discoveryHash: String,
+        val discoveredAt: Long = System.currentTimeMillis()
+    )
+
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val discoveredPeers = ConcurrentHashMap<String, DiscoveredPeerRecord>()
+    private var staleCleanupJob: Job? = null
+
+    private fun formatIso8601(timestamp: Long): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        sdf.timeZone = TimeZone.getTimeZone("UTC")
+        return sdf.format(Date(timestamp))
+    }
+
+    private fun updateDiscoveredDevicesInDb() {
+        val db = TetherDatabase.getInstance(applicationContext)
+        val array = JSONArray()
+        for (peer in discoveredPeers.values) {
+            val obj = JSONObject().apply {
+                put("name", peer.name)
+                put("ip", peer.ip)
+                put("port", peer.port)
+                put("nonce", peer.nonce)
+                put("discoveryHash", peer.discoveryHash)
+                put("discoveredAt", formatIso8601(peer.discoveredAt))
+            }
+            array.put(obj)
+        }
+        db.setSetting("discovered_devices", array.toString())
+    }
+
+    private fun startStaleCleanup() {
+        staleCleanupJob?.cancel()
+        staleCleanupJob = serviceScope.launch {
+            while (isActive) {
+                delay(15000)
+                val cutoff = System.currentTimeMillis() - 30000
+                var changed = false
+                val iterator = discoveredPeers.values.iterator()
+                while (iterator.hasNext()) {
+                    val peer = iterator.next()
+                    if (peer.discoveredAt < cutoff) {
+                        iterator.remove()
+                        changed = true
+                    }
+                }
+                if (changed) {
+                    updateDiscoveredDevicesInDb()
+                }
+            }
+        }
+    }
+
     // ─── Service Lifecycle ───
 
     override fun onCreate() {
@@ -224,13 +292,25 @@ class ForegroundServicePlugin : Service(),
         registerNetworkTracking()
         startNativeNetworking()
         startClipboardMonitor()
+        startStaleCleanup()
         Log.i(TAG, "Service created — native networking started")
     }
 
     override fun onDestroy() {
         Log.i(TAG, "Service destroying")
+        staleCleanupJob?.cancel()
+        staleCleanupJob = null
+        serviceScope.cancel()
         stopClipboardMonitor()
         stopNativeNetworking()
+        
+        try {
+            val db = TetherDatabase.getInstance(applicationContext)
+            db.setSetting("discovered_devices", "[]")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear discovered devices on destroy", e)
+        }
+
         releaseAllLocks()
         unregisterNetworkTracking()
         super.onDestroy()
@@ -301,6 +381,15 @@ class ForegroundServicePlugin : Service(),
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set clipboard: ${e.message}")
         }
+
+        // Save to clipboard_entries table for history UI
+        try {
+            val db = TetherDatabase.getInstance(applicationContext)
+            val sourceName = connectionManager?.getConnectedDeviceInfo()?.get("name") as? String ?: "remote"
+            db.insertClipboardEntry(content, dataType, sourceName)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save received clipboard to DB: ${e.message}")
+        }
     }
 
     override fun onNotificationReceived(payload: NotificationPayload) {
@@ -312,6 +401,18 @@ class ForegroundServicePlugin : Service(),
 
     override fun onPeerDiscovered(peer: NativeDiscovery.DiscoveredPeer) {
         Log.i(TAG, "Peer discovered: ${peer.name} @ ${peer.ip}:${peer.port}")
+        
+        val record = DiscoveredPeerRecord(
+            name = peer.name,
+            ip = peer.ip,
+            port = peer.port,
+            nonce = peer.nonce,
+            discoveryHash = peer.discoveryHash,
+            discoveredAt = System.currentTimeMillis()
+        )
+        discoveredPeers["${peer.ip}:${peer.port}"] = record
+        updateDiscoveredDevicesInDb()
+
         connectionManager?.onPeerDiscovered(peer)
     }
 
@@ -342,6 +443,14 @@ class ForegroundServicePlugin : Service(),
 
             lastClipContent = content
             connectionManager?.sendClipboard(content)
+
+            // Save to clipboard_entries table for history UI
+            try {
+                val db = TetherDatabase.getInstance(applicationContext)
+                db.insertClipboardEntry(content, "TEXT", "local")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save local clipboard to DB: ${e.message}")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Clipboard change error: ${e.message}")
         }
