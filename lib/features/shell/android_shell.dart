@@ -7,6 +7,7 @@ import 'package:tether/features/files/files_screen.dart';
 import 'package:tether/features/settings/settings_screen.dart';
 import 'package:tether/features/pairing/pairing_dialog.dart';
 import 'package:tether/core/networking/connection_manager.dart';
+import 'package:tether/shared/widgets/disconnected_overlay.dart';
 
 /// Android bottom-navigation shell.
 class AndroidShell extends ConsumerStatefulWidget {
@@ -21,15 +22,41 @@ class _AndroidShellState extends ConsumerState<AndroidShell> {
 
   @override
   Widget build(BuildContext context) {
+    final connectionAsync = ref.watch(connectionStateProvider);
+    final connState = connectionAsync.valueOrNull ?? TetherConnectionState.disconnected;
+    final isConnected = connState == TetherConnectionState.connected;
+
     return Scaffold(
       backgroundColor: TetherColors.backgroundBase,
       body: IndexedStack(
         index: _currentTab,
-        children: const [
-          _AndroidHome(),
-          ClipboardScreen(),
-          FilesScreen(),
-          SettingsScreen(),
+        children: [
+          const _AndroidHome(),
+          isConnected
+              ? const ClipboardScreen()
+              : DisconnectedOverlay(
+                  featureName: 'Clipboard History',
+                  actionLabel: 'Pair Device',
+                  onAction: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => const PairingScanDialog(),
+                    );
+                  },
+                ),
+          isConnected
+              ? const FilesScreen()
+              : DisconnectedOverlay(
+                  featureName: 'Shared Files',
+                  actionLabel: 'Pair Device',
+                  onAction: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => const PairingScanDialog(),
+                    );
+                  },
+                ),
+          const SettingsScreen(),
         ],
       ),
       bottomNavigationBar: Container(
