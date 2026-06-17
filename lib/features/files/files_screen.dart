@@ -42,6 +42,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       return;
     }
 
+    ref.read(selectedFileDetailProvider.notifier).state = null;
     setState(() {
       _loading = true;
       _error = null;
@@ -238,6 +239,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                       ),
                     GestureDetector(
                       onTap: () {
+                        ref.read(selectedFileDetailProvider.notifier).state = null;
                         setState(() {
                           _breadcrumbs.removeRange(i + 1, _breadcrumbs.length);
                           _selectedIndex = null;
@@ -299,6 +301,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                                 isSelected: _selectedIndex == index,
                                 onTap: () {
                                   if (file.isDir) {
+                                    ref.read(selectedFileDetailProvider.notifier).state = null;
                                     setState(() {
                                       _breadcrumbs.add(file.name);
                                       _selectedIndex = null;
@@ -306,6 +309,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                                     _loadFiles();
                                   } else {
                                     setState(() => _selectedIndex = index);
+                                    final currentPath = _breadcrumbs.sublist(1).join('/');
+                                    final remoteRelativePath = currentPath.isEmpty ? file.name : '$currentPath/${file.name}';
+                                    ref.read(selectedFileDetailProvider.notifier).state = SelectedFileDetail(
+                                      file: file,
+                                      remotePath: remoteRelativePath,
+                                    );
                                   }
                                 },
                               );
@@ -543,3 +552,12 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
+
+/// Selected file details class for the side detail panel
+class SelectedFileDetail {
+  final FileItem file;
+  final String remotePath;
+  SelectedFileDetail({required this.file, required this.remotePath});
+}
+
+final selectedFileDetailProvider = StateProvider<SelectedFileDetail?>((ref) => null);
