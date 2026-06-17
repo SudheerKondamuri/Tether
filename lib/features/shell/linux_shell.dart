@@ -10,6 +10,8 @@ import 'package:tether/features/files/files_screen.dart';
 import 'package:tether/features/notifications/notifications_screen.dart';
 import 'package:tether/features/mirror/mirror_screen.dart';
 import 'package:tether/features/settings/settings_screen.dart';
+import 'package:tether/core/networking/connection_manager.dart';
+import 'package:tether/shared/widgets/disconnected_overlay.dart';
 
 /// Currently selected navigation index.
 final selectedNavProvider = StateProvider<int>((ref) => 0);
@@ -21,6 +23,9 @@ class LinuxShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedNav = ref.watch(selectedNavProvider);
+    final connectionAsync = ref.watch(connectionStateProvider);
+    final connState = connectionAsync.valueOrNull ?? TetherConnectionState.disconnected;
+    final isConnected = connState == TetherConnectionState.connected;
 
     return Scaffold(
       body: Column(
@@ -61,7 +66,7 @@ class LinuxShell extends ConsumerWidget {
                         ),
                       );
                     },
-                    child: _buildContent(selectedNav),
+                    child: _buildContent(selectedNav, isConnected, ref),
                   ),
                 ),
 
@@ -110,18 +115,46 @@ class LinuxShell extends ConsumerWidget {
     );
   }
 
-  Widget _buildContent(int index) {
+  Widget _buildContent(int index, bool isConnected, WidgetRef ref) {
     switch (index) {
       case 0:
         return const DashboardScreen(key: ValueKey(0));
       case 1:
-        return const ClipboardScreen(key: ValueKey(1));
+        return isConnected
+            ? const ClipboardScreen(key: ValueKey(1))
+            : DisconnectedOverlay(
+                key: const ValueKey('clip_lock'),
+                featureName: 'Clipboard History',
+                actionLabel: 'Go to Settings',
+                onAction: () => ref.read(selectedNavProvider.notifier).state = 5,
+              );
       case 2:
-        return const FilesScreen(key: ValueKey(2));
+        return isConnected
+            ? const FilesScreen(key: ValueKey(2))
+            : DisconnectedOverlay(
+                key: const ValueKey('files_lock'),
+                featureName: 'Shared Files',
+                actionLabel: 'Go to Settings',
+                onAction: () => ref.read(selectedNavProvider.notifier).state = 5,
+              );
       case 3:
-        return const NotificationsScreen(key: ValueKey(3));
+        return isConnected
+            ? const NotificationsScreen(key: ValueKey(3))
+            : DisconnectedOverlay(
+                key: const ValueKey('notif_lock'),
+                featureName: 'Notifications',
+                actionLabel: 'Go to Settings',
+                onAction: () => ref.read(selectedNavProvider.notifier).state = 5,
+              );
       case 4:
-        return const MirrorScreen(key: ValueKey(4));
+        return isConnected
+            ? const MirrorScreen(key: ValueKey(4))
+            : DisconnectedOverlay(
+                key: const ValueKey('mirror_lock'),
+                featureName: 'Screen Mirroring',
+                actionLabel: 'Go to Settings',
+                onAction: () => ref.read(selectedNavProvider.notifier).state = 5,
+              );
       case 5:
         return const SettingsScreen(key: ValueKey(5));
       default:
