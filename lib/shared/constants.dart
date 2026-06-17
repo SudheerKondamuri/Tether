@@ -8,7 +8,7 @@ class TetherConstants {
 
   // ─── Networking ───
   static const int tcpPort = 5280;
-  static const int httpFilePort = 5281;
+  static const int httpFilePort = 5282;
   static const String mdnsServiceType = '_continuumlink._tcp';
 
   // ─── Heartbeat ───
