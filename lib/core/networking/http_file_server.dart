@@ -148,7 +148,8 @@ class HttpFileServer {
 
     // Simple upload: read body and write to file
     // The filename comes from the X-Filename header
-    final filename = request.headers['x-filename'] ?? 'unnamed';
+    final rawFilename = request.headers['x-filename'] ?? 'unnamed';
+    final filename = Uri.decodeComponent(rawFilename);
     final destPath = p.join(_sharedDirectory!, filename);
 
     // Security: prevent path traversal
