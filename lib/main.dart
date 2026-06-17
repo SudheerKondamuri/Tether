@@ -11,6 +11,7 @@ import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/core/networking/mdns_discovery.dart';
 import 'package:tether/shared/constants.dart';
 import 'package:tether/core/database/database_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,10 +45,10 @@ class _TetherAppState extends ConsumerState<TetherApp> {
 
   Future<void> _initServices() async {
     if (PlatformUtils.isAndroid) {
-      // On Android, the native Kotlin ForegroundService handles ALL
-      // networking (TCP, TLS, mDNS, UDP, heartbeats, auto-reconnect).
-      // The UI process is strictly a remote control — it reads state
-      // from SQLite and sends commands via MethodChannel.
+      // On Android, request notification permissions first so that the persistent
+      // Foreground Service notification (which displays connection status and sync actions)
+      // is visible to the user.
+      await Permission.notification.request();
       return;
     }
 
