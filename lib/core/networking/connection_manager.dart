@@ -376,7 +376,7 @@ class ConnectionManager {
         name: hs.name,
         platform: hs.platform,
         ip: socket.remoteAddress.address,
-        port: socket.remotePort,
+        port: TetherConstants.tcpPort,
       );
       _peerController.add(_peer);
       _updatePeerInSettings(_peer);
@@ -384,7 +384,7 @@ class ConnectionManager {
       _stopAutoReconnect();
 
       // Extract peer's TLS certificate fingerprint and store pairing record
-      _storePairingRecord(packet.deviceId, hs.name, hs.platform, socket.peerCertificate, socket.remoteAddress.address, socket.remotePort);
+      _storePairingRecord(packet.deviceId, hs.name, hs.platform, socket.peerCertificate, socket.remoteAddress.address, TetherConstants.tcpPort);
 
       // Send our handshake back
       _server.broadcast(Packet(
