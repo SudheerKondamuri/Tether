@@ -17,10 +17,13 @@ class ClipboardScreen extends ConsumerStatefulWidget {
   ConsumerState<ClipboardScreen> createState() => _ClipboardScreenState();
 }
 
+enum _ClipboardFilter { all, local, remote }
+
 class _ClipboardScreenState extends ConsumerState<ClipboardScreen> {
   final _searchController = TextEditingController();
   String _filter = '';
   int? _selectedIndex;
+  _ClipboardFilter _activeFilter = _ClipboardFilter.all;
 
   @override
   void dispose() {
@@ -37,8 +40,20 @@ class _ClipboardScreenState extends ConsumerState<ClipboardScreen> {
       child: historyAsync.when(
         data: (items) {
           final filtered = items.where((item) {
-            if (_filter.isEmpty) return true;
-            return item.content.toLowerCase().contains(_filter.toLowerCase());
+            // Search filter
+            if (_filter.isNotEmpty &&
+                !item.content.toLowerCase().contains(_filter.toLowerCase())) {
+              return false;
+            }
+            // Category filter
+            switch (_activeFilter) {
+              case _ClipboardFilter.all:
+                return true;
+              case _ClipboardFilter.local:
+                return item.sourceDevice.toLowerCase() == 'local';
+              case _ClipboardFilter.remote:
+                return item.sourceDevice.toLowerCase() != 'local';
+            }
           }).toList();
 
           return Column(
@@ -91,6 +106,42 @@ class _ClipboardScreenState extends ConsumerState<ClipboardScreen> {
                   hint: 'Search clipboard...',
                   prefixIcon: Icons.search,
                   onChanged: (val) => setState(() => _filter = val),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ─── Filter Pills ───
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    _FilterPill(
+                      label: 'All',
+                      isActive: _activeFilter == _ClipboardFilter.all,
+                      onTap: () => setState(() {
+                        _activeFilter = _ClipboardFilter.all;
+                        _selectedIndex = null;
+                      }),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterPill(
+                      label: 'Local',
+                      isActive: _activeFilter == _ClipboardFilter.local,
+                      onTap: () => setState(() {
+                        _activeFilter = _ClipboardFilter.local;
+                        _selectedIndex = null;
+                      }),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterPill(
+                      label: 'Remote',
+                      isActive: _activeFilter == _ClipboardFilter.remote,
+                      onTap: () => setState(() {
+                        _activeFilter = _ClipboardFilter.remote;
+                        _selectedIndex = null;
+                      }),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
@@ -340,6 +391,50 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _FilterPill({
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive
+              ? TetherColors.surfaceHigher
+              : TetherColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive
+                ? TetherColors.accentPrimary.withAlpha(180)
+                : TetherColors.borderSubtle,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 12,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            color: isActive ? TetherColors.textPrimary : TetherColors.textSecondary,
+          ),
+        ),
       ),
     );
   }
