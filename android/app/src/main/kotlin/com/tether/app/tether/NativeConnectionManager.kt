@@ -395,14 +395,14 @@ class NativeConnectionManager(
                 name = handshake.name,
                 platform = handshake.platform,
                 ip = peerIp,
-                port = peerPort
+                port = TetherConstants.TCP_PORT
             )
             connectedDevice = device
             setState(ConnectionState.CONNECTED)
             listener.onDeviceConnected(device)
 
             // Store pairing record
-            storePairingRecord(socket, peerDeviceId, handshake, peerIp, peerPort)
+            storePairingRecord(socket, peerDeviceId, handshake, peerIp, TetherConstants.TCP_PORT)
 
             // Start heartbeat and reading
             startHeartbeat(socket)
