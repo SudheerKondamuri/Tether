@@ -2,6 +2,7 @@ package com.tether.app.tether
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -13,6 +14,7 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -58,6 +60,10 @@ class ForegroundServicePlugin : Service(),
         // Static reference for MethodChannel bridge from UI
         private var connectionManager: NativeConnectionManager? = null
         private var discovery: NativeDiscovery? = null
+        private var instance: ForegroundServicePlugin? = null
+
+        fun getConnectionManager(): NativeConnectionManager? = connectionManager
+        fun getInstance(): ForegroundServicePlugin? = instance
 
         /**
          * Register the MethodChannel on the UI FlutterEngine.
@@ -237,6 +243,7 @@ class ForegroundServicePlugin : Service(),
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val discoveredPeers = ConcurrentHashMap<String, DiscoveredPeerRecord>()
     private var staleCleanupJob: Job? = null
+    private var fileServer: NativeFileServer? = null
 
     private fun formatIso8601(timestamp: Long): String {
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
@@ -287,20 +294,29 @@ class ForegroundServicePlugin : Service(),
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         startNotificationForeground()
         acquireAllLocks()
         registerNetworkTracking()
         startNativeNetworking()
         startClipboardMonitor()
         startStaleCleanup()
+        
+        fileServer = NativeFileServer(applicationContext).apply { start() }
+        
         Log.i(TAG, "Service created — native networking started")
     }
 
     override fun onDestroy() {
         Log.i(TAG, "Service destroying")
+        instance = null
         staleCleanupJob?.cancel()
         staleCleanupJob = null
         serviceScope.cancel()
+        
+        fileServer?.stop()
+        fileServer = null
+        
         stopClipboardMonitor()
         stopNativeNetworking()
         
@@ -563,6 +579,7 @@ class ForegroundServicePlugin : Service(),
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
+            .addAction(getSendClipboardAction())
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -591,6 +608,7 @@ class ForegroundServicePlugin : Service(),
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
+                .addAction(getSendClipboardAction())
                 .build()
 
             val manager = getSystemService(NotificationManager::class.java)
@@ -598,6 +616,23 @@ class ForegroundServicePlugin : Service(),
         } catch (e: Exception) {
             Log.w(TAG, "Failed to update notification: ${e.message}")
         }
+    }
+
+    private fun getSendClipboardAction(): NotificationCompat.Action {
+        val intent = Intent(this, ClipboardActionActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_send,
+            "Send Clipboard",
+            pendingIntent
+        ).build()
     }
 
     private fun createNotificationChannel() {
@@ -612,5 +647,149 @@ class ForegroundServicePlugin : Service(),
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
+    }
+
+    fun enqueueNativeUpload(uris: List<Uri>) {
+        serviceScope.launch(Dispatchers.IO) {
+            val peerIp = connectionManager?.getConnectedDeviceInfo()?.get("ip") as? String
+            if (peerIp == null) {
+                Log.w(TAG, "Cannot start upload: no peer IP found")
+                return@launch
+            }
+
+            val totalFiles = uris.size
+            uris.forEachIndexed { index, uri ->
+                uploadSingleFile(uri, peerIp, index + 1, totalFiles)
+            }
+        }
+    }
+
+    private fun uploadSingleFile(uri: Uri, peerIp: String, fileIndex: Int, totalFiles: Int) {
+        val transferNotificationId = 2
+        val (filename, filesize) = getUriMetadata(applicationContext, uri)
+        
+        try {
+            val uploadUrl = java.net.URL("http://$peerIp:5282/api/upload")
+            val conn = (uploadUrl.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                setChunkedStreamingMode(65536)
+                setRequestProperty("Content-Type", "application/octet-stream")
+                val encodedName = java.net.URLEncoder.encode(filename, "UTF-8")
+                setRequestProperty("X-Filename", encodedName)
+                if (filesize > 0) {
+                    setRequestProperty("Content-Length", filesize.toString())
+                }
+            }
+
+            updateTransferNotification(
+                transferNotificationId,
+                "Sending $filename",
+                "File $fileIndex of $totalFiles • 0%",
+                0,
+                true
+            )
+
+            val inputStream = contentResolver.openInputStream(uri) ?: throw Exception("Failed to open Uri input stream")
+            val outputStream = conn.outputStream
+
+            val buffer = ByteArray(65536)
+            var bytesRead: Int
+            var totalBytesSent = 0L
+            var lastUpdate = 0L
+
+            inputStream.use { input ->
+                outputStream.use { output ->
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        totalBytesSent += bytesRead
+
+                        if (filesize > 0) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdate > 500L || totalBytesSent == filesize) {
+                                val progress = ((totalBytesSent * 100) / filesize).toInt()
+                                updateTransferNotification(
+                                    transferNotificationId,
+                                    "Sending $filename",
+                                    "File $fileIndex of $totalFiles • $progress%",
+                                    progress,
+                                    false
+                                )
+                                lastUpdate = now
+                            }
+                        }
+                    }
+                }
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode == 200) {
+                Log.i(TAG, "Uploaded $filename successfully")
+                updateTransferNotification(
+                    transferNotificationId,
+                    "Share complete ✓",
+                    "Sent $filename",
+                    100,
+                    false
+                )
+            } else {
+                throw Exception("Server returned HTTP $responseCode")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to upload file $filename: ${e.message}", e)
+            updateTransferNotification(
+                transferNotificationId,
+                "Transfer failed",
+                "Error sending $filename",
+                0,
+                false
+            )
+        }
+    }
+
+    private fun updateTransferNotification(
+        id: Int,
+        title: String,
+        text: String,
+        progress: Int,
+        indeterminate: Boolean
+    ) {
+        try {
+            val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.stat_sys_upload)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(progress < 100 && title.startsWith("Sending"))
+                .setProgress(100, progress, indeterminate)
+                .build()
+
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.notify(id, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update transfer notification: ${e.message}")
+        }
+    }
+
+    private fun getUriMetadata(context: Context, uri: Uri): Pair<String, Long> {
+        var name = "upload_${System.currentTimeMillis()}"
+        var size = -1L
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                if (cursor.moveToFirst()) {
+                    if (nameIndex != -1) {
+                        name = cursor.getString(nameIndex) ?: name
+                    }
+                    if (sizeIndex != -1) {
+                        size = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to query metadata for Uri: ${uri.path}")
+        }
+        return Pair(name, size)
     }
 }
