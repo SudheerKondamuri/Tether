@@ -6,6 +6,7 @@ import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/widgets/tether_button.dart';
 import 'package:tether/core/services/file_service.dart';
 import 'package:tether/core/networking/connection_manager.dart';
+import 'package:file_picker/file_picker.dart';
 
 /// File browser screen — browse remote device files.
 class FilesScreen extends ConsumerStatefulWidget {
@@ -103,106 +104,47 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         ),
       );
     }
-  }
-
-  Future<void> _showSendFileDialog() async {
-    final controller = TextEditingController();
+  }  Future<void> _showSendFileDialog() async {
     final service = ref.read(fileServiceProvider);
     final messenger = ScaffoldMessenger.of(context);
-    
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: TetherColors.surfaceHigher,
-          title: const Text('Send File'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Enter local absolute path:',
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 12,
-                  color: TetherColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                style: const TextStyle(
-                  fontFamily: 'JetBrainsMono',
-                  fontSize: 13,
-                  color: TetherColors.textPrimary,
-                ),
-                decoration: InputDecoration(
-                  hintText: Platform.isAndroid
-                      ? '/storage/emulated/0/Download/file.txt'
-                      : '/home/omni/Downloads/file.txt',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final path = controller.text.trim();
-                if (path.isEmpty) return;
-                
-                final navigator = Navigator.of(dialogContext);
-                final file = File(path);
-                final fileExists = await file.exists();
 
-                if (!fileExists) {
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('File does not exist! Check path.'),
-                      backgroundColor: TetherColors.accentDanger,
-                    ),
-                  );
-                  return;
-                }
+    try {
+      final result = await FilePicker.platform.pickFiles();
+      if (result == null || result.files.isEmpty) return;
 
-                navigator.pop();
-                
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text('Uploading ${p.basename(path)}...'),
-                    backgroundColor: TetherColors.accentPrimary,
-                  ),
-                );
+      final path = result.files.single.path;
+      if (path == null) {
+        throw Exception('Cannot access local file path');
+      }
 
-                try {
-                  await service.uploadFile(file);
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Uploaded ${p.basename(path)} successfully!'),
-                      backgroundColor: TetherColors.accentSecondary,
-                    ),
-                  );
-                  _loadFiles();
-                } catch (e) {
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Upload failed: $e'),
-                      backgroundColor: TetherColors.accentDanger,
-                    ),
-                  );
-                }
-              },
-              child: const Text('Send'),
-            ),
-          ],
-        );
-      },
-    );
+      final file = File(path);
+      
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Uploading ${p.basename(path)}...'),
+          backgroundColor: TetherColors.accentPrimary,
+        ),
+      );
+
+      await service.uploadFile(file);
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Uploaded ${p.basename(path)} successfully!'),
+          backgroundColor: TetherColors.accentSecondary,
+        ),
+      );
+      _loadFiles();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: $e'),
+          backgroundColor: TetherColors.accentDanger,
+        ),
+      );
+    }
   }
+
 
   @override
   Widget build(BuildContext context) {
