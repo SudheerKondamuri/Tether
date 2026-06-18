@@ -4,10 +4,8 @@ import 'dart:io';
 import 'dart:math';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/constants.dart';
-import 'package:tether/shared/platform_utils.dart';
-import 'package:tether/core/database/database_provider.dart';
+import 'package:tether/core/database/app_database.dart';
 
 
 /// Rotating cryptographic hashes for secure peer identification.
@@ -95,8 +93,10 @@ class DiscoveredDevice {
 }
 
 /// mDNS and UDP Broadcast service for discovering and advertising Tether instances.
+///
+/// **Flutter-free**: depends only on `AppDatabase` (constructor-injected).
 class MdnsDiscovery {
-  final Ref ref;
+  final AppDatabase _db;
 
   // Ephemeral session identification
   final int discoverySessionNonce = Random.secure().nextInt(10000000);
@@ -121,13 +121,12 @@ class MdnsDiscovery {
       _devicesController.stream;
   List<DiscoveredDevice> get devices => _discovered.toList();
 
-  MdnsDiscovery({required this.ref});
+  MdnsDiscovery({required AppDatabase db}) : _db = db;
 
 
   /// Compute our own discovery hash for broadcasting.
   Future<String?> _getOwnDiscoveryHash() async {
-    final db = ref.read(databaseProvider);
-    final myId = await db.getSetting('device_id');
+    final myId = await _db.getSetting('device_id');
     if (myId == null || myId.isEmpty) return null;
     return CryptoUtils.computeDiscoveryHash(myId); // Hash the stable ID, NOT the cert
   }
@@ -138,9 +137,8 @@ class MdnsDiscovery {
 
   void _updateDevicesInSettings() {
     try {
-      final db = ref.read(databaseProvider);
       final jsonStr = jsonEncode(_discovered.map((d) => d.toJson()).toList());
-      db.setSetting('discovered_devices', jsonStr);
+      _db.setSetting('discovered_devices', jsonStr);
     } catch (_) {
       // Container may be disposed during shutdown — safe to ignore.
     }
@@ -406,34 +404,5 @@ class MdnsDiscovery {
   }
 }
 
-// ─── Riverpod Providers ───
 
-final mdnsDiscoveryProvider = Provider<MdnsDiscovery>((ref) {
-  final discovery = MdnsDiscovery(ref: ref);
-  ref.onDispose(() => discovery.dispose());
-  return discovery;
-});
 
-final discoveredDevicesProvider = StreamProvider<List<DiscoveredDevice>>((ref) {
-  if (PlatformUtils.isAndroid) {
-    // CRITICAL: Use periodic polling instead of Drift's watchSetting().
-    // Kotlin background service writes directly to SQLite bypassing Drift.
-    final db = ref.watch(databaseProvider);
-    return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
-        .asyncMap((_) => db.getSetting('discovered_devices'))
-        .map((val) {
-      if (val == null || val.isEmpty) return [];
-      try {
-        final List<dynamic> list = jsonDecode(val) as List<dynamic>;
-        return list
-            .map((item) =>
-                DiscoveredDevice.fromJson(item as Map<String, dynamic>))
-            .toList();
-      } catch (_) {
-        return [];
-      }
-    });
-  }
-  final discovery = ref.watch(mdnsDiscoveryProvider);
-  return discovery.devicesStream;
-});
