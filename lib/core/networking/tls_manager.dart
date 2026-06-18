@@ -3,20 +3,36 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:pointycastle/export.dart' as pc;
 import 'package:asn1lib/asn1lib.dart';
 
 /// Manages TLS certificates — generation, storage, fingerprinting.
+///
+/// **Daemon-safe**: does not import `package:flutter` or `path_provider`.
+/// Set [certDirOverride] before calling [ensureCertificate] if running
+/// outside a Flutter context (e.g. from `bin/tetherd.dart`).
 class TlsManager {
   static const _certFilename = 'tether_cert.pem';
   static const _keyFilename = 'tether_key.pem';
 
+  /// Set this before calling [ensureCertificate] to skip `path_provider`.
+  /// The daemon sets it to `~/.config/tether/certs`.
+  /// The Flutter app should also set this in `main.dart` after resolving
+  /// its own data dir via path_provider.
+  static String? certDirOverride;
+
   /// Get the directory where certs are stored.
   static Future<String> _certDir() async {
-    final dir = await getApplicationSupportDirectory();
-    final certDir = Directory(p.join(dir.path, 'certs'));
+    late final String basePath;
+    if (certDirOverride != null) {
+      basePath = certDirOverride!;
+    } else {
+      // Default to XDG config path on Linux
+      final home = Platform.environment['HOME'] ?? '/tmp';
+      basePath = p.join(home, '.config', 'tether', 'certs');
+    }
+    final certDir = Directory(basePath);
     if (!await certDir.exists()) {
       await certDir.create(recursive: true);
     }
