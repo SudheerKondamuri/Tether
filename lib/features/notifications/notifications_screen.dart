@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/widgets/tether_badge.dart';
-import 'package:tether/core/services/notification_bridge_service.dart';
 import 'package:tether/core/database/app_database.dart';
+import 'package:tether/core/providers.dart';
 
 /// Notification mirror screen.
 class NotificationsScreen extends ConsumerStatefulWidget {
