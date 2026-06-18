@@ -45,10 +45,12 @@ class _TetherAppState extends ConsumerState<TetherApp> {
 
   Future<void> _initServices() async {
     if (PlatformUtils.isAndroid) {
-      // On Android, request notification permissions first so that the persistent
-      // Foreground Service notification (which displays connection status and sync actions)
-      // is visible to the user.
+      // On Android, request permissions first
       await Permission.notification.request();
+      await Permission.manageExternalStorage.request();
+      
+      // Initialize file service so local shared directory is correctly resolved
+      await ref.read(fileServiceProvider).start();
       return;
     }
 
