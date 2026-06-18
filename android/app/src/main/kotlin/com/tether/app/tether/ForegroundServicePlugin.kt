@@ -651,7 +651,10 @@ class ForegroundServicePlugin : Service(),
 
     fun enqueueNativeUpload(uris: List<Uri>) {
         serviceScope.launch(Dispatchers.IO) {
-            val peerIp = connectionManager?.getConnectedDeviceInfo()?.get("ip") as? String
+            var peerIp = connectionManager?.getConnectedDeviceInfo()?.get("ip") as? String
+            if (peerIp != null && (peerIp == "127.0.0.1" || peerIp == "localhost" || peerIp == "::1")) {
+                peerIp = "10.0.2.2"
+            }
             if (peerIp == null) {
                 Log.w(TAG, "Cannot start upload: no peer IP found")
                 return@launch
