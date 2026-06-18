@@ -40,18 +40,27 @@ class FileService {
 
   /// Initialize and start local file server.
   Future<void> start() async {
-    Directory dir;
-    if (Platform.isAndroid) {
-      dir = await getApplicationDocumentsDirectory();
-    } else {
-      dir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-    }
-    _sharedDirectory = dir.path;
+    Directory downloadDir;
+    Directory serveDir;
 
-    await _fileServer.start(
-      sharedDirectory: _sharedDirectory,
-      port: TetherConstants.httpFilePort,
-    );
+    if (Platform.isAndroid) {
+      final extDownloads = await getDownloadsDirectory();
+      downloadDir = extDownloads ?? Directory('/storage/emulated/0/Download');
+      serveDir = Directory('/storage/emulated/0');
+    } else {
+      downloadDir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+      final homePath = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+      serveDir = homePath != null ? Directory(homePath) : downloadDir;
+    }
+
+    _sharedDirectory = downloadDir.path;
+
+    if (!Platform.isAndroid) {
+      await _fileServer.start(
+        sharedDirectory: serveDir.path,
+        port: TetherConstants.httpFilePort,
+      );
+    }
   }
 
   /// Change local shared directory.
