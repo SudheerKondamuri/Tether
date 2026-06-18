@@ -1,4 +1,3 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/core/database/app_database.dart';
 
 /// Pre-initialized database singleton. Set via [initDatabase] before any
@@ -14,20 +13,27 @@ AppDatabase? _dbInstance;
 ///
 /// On Desktop (Linux/macOS/Windows):
 ///   Opens a direct single-process NativeDatabase.
+///   `AppDatabase.dbPathOverride` must already be set before calling this.
 Future<void> initDatabase({bool isBackground = false}) async {
   _dbInstance = AppDatabase();
 }
 
-/// Singleton database instance provider.
-/// Requires [initDatabase] to have been called before the ProviderContainer
-/// is created.
-final databaseProvider = Provider<AppDatabase>((ref) {
-  ref.onDispose(() => _dbInstance?.close());
+/// Initialize the database with an explicit file path (daemon mode).
+/// No Flutter platform channels needed.
+Future<void> initDatabaseAtPath(String dbPath) async {
+  _dbInstance = AppDatabase.atPath(dbPath);
+}
+
+/// Get the current database instance without Riverpod.
+/// Used by the daemon and any code that runs outside a ProviderContainer.
+AppDatabase getDatabase() {
   if (_dbInstance == null) {
     throw StateError(
-      'Database not initialized. Call initDatabase() before accessing '
-      'databaseProvider.',
+      'Database not initialized. Call initDatabase() or initDatabaseAtPath() '
+      'before accessing getDatabase().',
     );
   }
   return _dbInstance!;
-});
+}
+
+
