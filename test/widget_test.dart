@@ -2,7 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/core/database/app_database.dart';
-import 'package:tether/core/database/database_provider.dart';
+import 'package:tether/core/providers.dart';
 import 'package:tether/main.dart';
 
 void main() {
