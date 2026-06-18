@@ -1,10 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/core/database/app_database.dart';
-import 'package:tether/core/database/database_provider.dart';
 import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/core/networking/packet_protocol.dart';
 import 'package:tether/shared/constants.dart';
@@ -33,6 +30,9 @@ class ClipEntry {
 
 /// Watches the system clipboard, detects changes, syncs with peer,
 /// and maintains local history in SQLite.
+///
+/// **Flutter-free**: depends only on `ConnectionManager` and `AppDatabase` via
+/// constructor injection. Uses wayland/x11 CLI tools as fallbacks on Linux.
 class ClipboardService {
   final ConnectionManager _connectionManager;
   final AppDatabase _db;
@@ -40,7 +40,15 @@ class ClipboardService {
   String _lastClipboard = '';
   bool _isRunning = false;
 
-  static const _channel = MethodChannel(TetherConstants.clipboardChannel);
+  /// Platform-specific clipboard reader. If null, falls back to Linux CLI on Linux.
+  Future<String> Function()? platformGetClipboard;
+
+  /// Platform-specific clipboard writer. If null, falls back to Linux CLI on Linux.
+  Future<void> Function(String text)? platformSetClipboard;
+
+  /// Optional Android MethodChannel call handlers/initializers.
+  void Function(void Function(String text) onChanged)? androidStartListening;
+  void Function()? androidStopListening;
 
   final _historyController = StreamController<List<ClipEntry>>.broadcast();
   Stream<List<ClipEntry>> get historyStream => _historyController.stream;
@@ -65,13 +73,9 @@ class ClipboardService {
         .listen(_handleIncomingClipboard);
 
     if (Platform.isAndroid) {
-      _channel.setMethodCallHandler((call) async {
-        if (call.method == 'onClipboardChanged') {
-          final text = call.arguments['text'] as String? ?? '';
-          _onLocalClipboardChanged(text);
-        }
-      });
-      _channel.invokeMethod('startListening');
+      if (androidStartListening != null) {
+        androidStartListening!(_onLocalClipboardChanged);
+      }
     } else {
       // Poll system clipboard for Linux/non-Android
       _pollTimer = Timer.periodic(
@@ -85,8 +89,9 @@ class ClipboardService {
   void stop() {
     _isRunning = false;
     if (Platform.isAndroid) {
-      _channel.invokeMethod('stopListening');
-      _channel.setMethodCallHandler(null);
+      if (androidStopListening != null) {
+        androidStopListening!();
+      }
     } else {
       _pollTimer?.cancel();
       _pollTimer = null;
@@ -96,8 +101,9 @@ class ClipboardService {
   /// Check system clipboard for changes (Linux fallback).
   Future<void> _checkClipboard() async {
     try {
-      final data = await Clipboard.getData(Clipboard.kTextPlain);
-      final text = data?.text ?? '';
+      final text = platformGetClipboard != null
+          ? await platformGetClipboard!()
+          : await _readLinuxClipboard();
       await _onLocalClipboardChanged(text);
     } catch (_) {
       // Clipboard access may fail on some platforms
@@ -130,7 +136,7 @@ class ClipboardService {
   }
 
   /// Handle incoming clipboard update from peer.
-  void _handleIncomingClipboard(Packet packet) {
+  Future<void> _handleIncomingClipboard(Packet packet) async {
     final payload = packet.payload;
     final text = payload['content'] as String? ?? '';
     if (text.isEmpty) return;
@@ -148,14 +154,14 @@ class ClipboardService {
 
     // Update the local clipboard
     _lastClipboard = text;
-    if (Platform.isAndroid) {
-      _channel.invokeMethod('setClipboard', {'text': text});
-    } else {
-      Clipboard.setData(ClipboardData(text: text));
+    if (platformSetClipboard != null) {
+      await platformSetClipboard!(text);
+    } else if (Platform.isLinux) {
+      await _writeLinuxClipboard(text);
     }
 
     // Save to database
-    _db.insertClipboardEntry(ClipboardEntriesCompanion(
+    await _db.insertClipboardEntry(ClipboardEntriesCompanion(
       content: Value(text),
       dataType: Value(type.name),
       sourceDevice: Value(source),
@@ -211,10 +217,10 @@ class ClipboardService {
   /// Copy a history entry back to the system clipboard.
   Future<void> copyToClipboard(ClipEntry entry) async {
     _lastClipboard = entry.content;
-    if (Platform.isAndroid) {
-      await _channel.invokeMethod('setClipboard', {'text': entry.content});
-    } else {
-      await Clipboard.setData(ClipboardData(text: entry.content));
+    if (platformSetClipboard != null) {
+      await platformSetClipboard!(entry.content);
+    } else if (Platform.isLinux) {
+      await _writeLinuxClipboard(entry.content);
     }
   }
 
@@ -228,33 +234,58 @@ class ClipboardService {
     stop();
     _historyController.close();
   }
-}
 
-// ─── Riverpod Providers ───
+  /// Read clipboard from Wayland/X11 CLI tools (pure Dart fallback).
+  Future<String> _readLinuxClipboard() async {
+    try {
+      final res = await Process.run('wl-paste', ['-n', '-t', 'text']);
+      if (res.exitCode == 0) {
+        return (res.stdout as String).trim();
+      }
+    } catch (_) {}
 
-final clipboardServiceProvider = Provider<ClipboardService>((ref) {
-  final connManager = ref.watch(connectionManagerProvider);
-  final db = ref.watch(databaseProvider);
-  final service = ClipboardService(
-    connectionManager: connManager,
-    db: db,
-  );
-  ref.onDispose(() => service.dispose());
-  return service;
-});
+    try {
+      final res = await Process.run('xclip', ['-selection', 'clipboard', '-o']);
+      if (res.exitCode == 0) {
+        return (res.stdout as String).trim();
+      }
+    } catch (_) {}
 
-final clipboardHistoryProvider = StreamProvider<List<ClipboardEntry>>((ref) {
-  final db = ref.watch(databaseProvider);
+    try {
+      final res = await Process.run('xsel', ['-o', '-b']);
+      if (res.exitCode == 0) {
+        return (res.stdout as String).trim();
+      }
+    } catch (_) {}
 
-  if (Platform.isAndroid) {
-    // CRITICAL: Kotlin writes clipboard entries directly to SQLite via
-    // TetherDatabase.kt, bypassing Drift's internal change notification
-    // system. Use periodic polling so the UI sees entries written by the
-    // native foreground service.
-    return Stream.periodic(const Duration(seconds: 1), (i) => i)
-        .asyncMap((_) => db.getClipboardEntries());
+    return '';
   }
 
-  // Desktop: Drift's watch() works because Dart writes the entries itself
-  return db.watchClipboardEntries();
-});
+  /// Write clipboard to Wayland/X11 CLI tools (pure Dart fallback).
+  Future<void> _writeLinuxClipboard(String text) async {
+    try {
+      final proc = await Process.start('wl-copy', []);
+      proc.stdin.write(text);
+      await proc.stdin.close();
+      final exitCode = await proc.exitCode;
+      if (exitCode == 0) return;
+    } catch (_) {}
+
+    try {
+      final proc = await Process.start('xclip', ['-selection', 'clipboard']);
+      proc.stdin.write(text);
+      await proc.stdin.close();
+      final exitCode = await proc.exitCode;
+      if (exitCode == 0) return;
+    } catch (_) {}
+
+    try {
+      final proc = await Process.start('xsel', ['-i', '-b']);
+      proc.stdin.write(text);
+      await proc.stdin.close();
+      await proc.exitCode;
+    } catch (_) {}
+  }
+}
+
+
