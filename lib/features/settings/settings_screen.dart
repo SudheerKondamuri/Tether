@@ -7,8 +7,7 @@ import 'package:tether/shared/widgets/tether_card.dart';
 import 'package:tether/shared/widgets/tether_button.dart';
 import 'package:tether/shared/widgets/tether_text_field.dart';
 import 'package:tether/shared/widgets/v2_locked_button.dart';
-import 'package:tether/core/networking/connection_manager.dart';
-import 'package:tether/core/services/notification_bridge_service.dart';
+import 'package:tether/core/providers.dart';
 import 'package:tether/shared/platform_utils.dart';
 
 /// Settings screen with connection, pairing, modules, and app config.
