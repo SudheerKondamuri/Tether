@@ -1,13 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/core/database/app_database.dart';
-import 'package:tether/core/database/database_provider.dart';
 import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/core/networking/packet_protocol.dart';
-import 'package:tether/shared/constants.dart';
 
 /// Notification model for in-memory display.
 class TetherNotification {
@@ -32,13 +28,21 @@ class TetherNotification {
 
 /// Listens for notification packets from the Android peer (on Linux)
 /// and forwards notifications from the Android OS to the peer (on Android).
+///
+/// **Flutter-free**: depends only on `ConnectionManager` and `AppDatabase` via
+/// constructor injection. No `Ref`, no `MethodChannel`, no `package:flutter`.
 class NotificationBridgeService {
   final ConnectionManager _connectionManager;
   final AppDatabase _db;
   StreamSubscription<Packet>? _sub;
   bool _isRunning = false;
 
-  static const _channel = MethodChannel(TetherConstants.notificationChannel);
+  /// Optional callbacks for Android notification access.
+  Future<bool> Function()? androidIsPermissionGranted;
+  Future<void> Function()? androidRequestPermission;
+  Future<void> Function()? androidStartListening;
+  Future<void> Function()? androidStopListening;
+  void Function(void Function(dynamic args)? onNotification)? androidSetupCallback;
 
   final _notifController =
       StreamController<List<TetherNotification>>.broadcast();
@@ -61,11 +65,9 @@ class NotificationBridgeService {
     _isRunning = true;
 
     if (Platform.isAndroid) {
-      _channel.setMethodCallHandler((call) async {
-        if (call.method == 'onNotificationPosted') {
-          _sendNotificationToPeer(call.arguments);
-        }
-      });
+      if (androidSetupCallback != null) {
+        androidSetupCallback!(_sendNotificationToPeer);
+      }
 
       final granted = await isPermissionGranted();
       if (granted) {
@@ -84,7 +86,9 @@ class NotificationBridgeService {
     _sub?.cancel();
     _sub = null;
     if (Platform.isAndroid) {
-      _channel.setMethodCallHandler(null);
+      if (androidSetupCallback != null) {
+        androidSetupCallback!(null);
+      }
       stopListening();
     }
   }
@@ -92,35 +96,34 @@ class NotificationBridgeService {
   /// Check if Android Notification Access permission is granted.
   Future<bool> isPermissionGranted() async {
     if (!Platform.isAndroid) return true;
-    try {
-      return await _channel.invokeMethod<bool>('isPermissionGranted') ?? false;
-    } catch (_) {
-      return false;
+    if (androidIsPermissionGranted != null) {
+      return await androidIsPermissionGranted!();
     }
+    return false;
   }
 
   /// Request Android Notification Access permission.
   Future<void> requestPermission() async {
     if (!Platform.isAndroid) return;
-    try {
-      await _channel.invokeMethod('requestPermission');
-    } catch (_) {}
+    if (androidRequestPermission != null) {
+      await androidRequestPermission!();
+    }
   }
 
   /// Start listening to native notifications on Android.
   Future<void> startListening() async {
     if (!Platform.isAndroid) return;
-    try {
-      await _channel.invokeMethod('startListening');
-    } catch (_) {}
+    if (androidStartListening != null) {
+      await androidStartListening!();
+    }
   }
 
   /// Stop listening to native notifications on Android.
   Future<void> stopListening() async {
     if (!Platform.isAndroid) return;
-    try {
-      await _channel.invokeMethod('stopListening');
-    } catch (_) {}
+    if (androidStopListening != null) {
+      await androidStopListening!();
+    }
   }
 
   void _sendNotificationToPeer(dynamic arguments) {
@@ -194,20 +197,3 @@ class NotificationBridgeService {
 }
 
 
-// ─── Riverpod Providers ───
-
-final notificationBridgeProvider = Provider<NotificationBridgeService>((ref) {
-  final connManager = ref.watch(connectionManagerProvider);
-  final db = ref.watch(databaseProvider);
-  final service = NotificationBridgeService(
-    connectionManager: connManager,
-    db: db,
-  );
-  ref.onDispose(() => service.dispose());
-  return service;
-});
-
-final notificationsProvider = StreamProvider<List<NotificationHistoryData>>((ref) {
-  final db = ref.watch(databaseProvider);
-  return db.watchNotifications();
-});
