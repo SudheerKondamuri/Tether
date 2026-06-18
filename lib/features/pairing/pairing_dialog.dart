@@ -9,8 +9,7 @@ import 'package:tether/shared/constants.dart';
 import 'package:tether/shared/widgets/tether_button.dart';
 import 'package:tether/shared/widgets/tether_text_field.dart';
 import 'package:tether/core/networking/tls_manager.dart';
-import 'package:tether/core/networking/connection_manager.dart';
-import 'package:tether/core/networking/mdns_discovery.dart';
+import 'package:tether/core/providers.dart';
 
 /// QR-based pairing flow — shows on the server side (Linux typically).
 class PairingDialog extends StatefulWidget {
