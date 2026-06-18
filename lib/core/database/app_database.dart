@@ -1,10 +1,6 @@
 import 'dart:io';
-import 'dart:ui';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:drift/isolate.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import 'package:tether/shared/constants.dart';
 import 'package:tether/core/database/tables.dart';
 
@@ -18,8 +14,24 @@ part 'app_database.g.dart';
   NotificationHistory,
 ])
 class AppDatabase extends _$AppDatabase {
-  /// Direct constructor for single-process use (Linux desktop).
+  /// Set by `main.dart` (Flutter) before constructing `AppDatabase()`.
+  /// Unused by `AppDatabase.atPath()` which takes the path directly.
+  static String? dbPathOverride;
+
+  /// Direct constructor for single-process use (Linux desktop / Flutter app).
   AppDatabase() : super(_openConnection());
+
+  /// Explicit-path constructor for daemon use (no path_provider needed).
+  /// The daemon knows its own data dir and passes the full DB path.
+  AppDatabase.atPath(String dbPath)
+      : super(NativeDatabase(
+          File(dbPath),
+          logStatements: false,
+          setup: (rawDb) {
+            rawDb.execute('PRAGMA journal_mode=WAL;');
+            rawDb.execute('PRAGMA synchronous=NORMAL;');
+          },
+        ));
 
   /// Constructor for DriftIsolate client connections (Android multi-isolate).
   /// DatabaseConnection extends QueryExecutor, so it passes directly to super.
@@ -31,40 +43,9 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
-  /// Spawn a DriftIsolate server and return a client-connected AppDatabase.
-  /// The DriftIsolate's connectPort is registered in IsolateNameServer
-  /// so the UI isolate can find and connect to it.
-  static Future<AppDatabase> openShared() async {
-    // Resolve path in the current isolate where platform channels work.
-    final dir = await getApplicationDocumentsDirectory();
-    final dbPath = p.join(dir.path, TetherConstants.databaseName);
-
-    // Spawn a dedicated Dart isolate that owns the single NativeDatabase.
-    // The closure captures dbPath (a String, which is sendable across isolates).
-    final isolate = await DriftIsolate.spawn(() {
-      return NativeDatabase(
-        File(dbPath),
-        logStatements: false,
-        setup: (rawDb) {
-          rawDb.execute('PRAGMA journal_mode=WAL;');
-          rawDb.execute('PRAGMA synchronous=NORMAL;');
-          // Force clients to bypass in-memory caching across isolates.
-          rawDb.execute('PRAGMA cache_size=0;');
-        },
-      );
-    });
-
-    // Register the connect port so the UI isolate can find it.
-    // Remove any stale registration first (e.g., from a previous service lifecycle).
-    IsolateNameServer.removePortNameMapping('tether_db_isolate');
-    IsolateNameServer.registerPortWithName(
-      isolate.connectPort,
-      'tether_db_isolate',
-    );
-
-    // The background isolate itself connects as a client too.
-    return AppDatabase.connect(await isolate.connect());
-  }
+  // NOTE: openShared() was removed during daemon decoupling.
+  // It relied on dart:ui's IsolateNameServer and path_provider.
+  // Android uses direct NativeDatabase; Linux daemon uses AppDatabase.atPath().
 
   // ─── Clipboard Operations ───
 
@@ -224,10 +205,18 @@ class AppDatabase extends _$AppDatabase {
 }
 
 /// Direct NativeDatabase connection for single-process desktop use.
+/// The DB path must be set via [AppDatabase.dbPathOverride] before
+/// constructing an `AppDatabase()` (the Flutter app does this in main.dart).
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, TetherConstants.databaseName));
+    final dbPath = AppDatabase.dbPathOverride;
+    if (dbPath == null) {
+      throw StateError(
+        'AppDatabase.dbPathOverride must be set before constructing '
+        'AppDatabase(). Call it in main.dart after resolving the data dir.',
+      );
+    }
+    final file = File(dbPath);
     return NativeDatabase.createInBackground(
       file,
       setup: (rawDb) {
