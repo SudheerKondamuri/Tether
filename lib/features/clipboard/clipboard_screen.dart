@@ -6,8 +6,7 @@ import 'package:tether/shared/widgets/tether_badge.dart';
 import 'package:tether/shared/widgets/tether_button.dart';
 import 'package:tether/shared/widgets/tether_text_field.dart';
 import 'package:tether/core/database/app_database.dart';
-import 'package:tether/core/database/database_provider.dart';
-import 'package:tether/core/services/clipboard_service.dart';
+import 'package:tether/core/providers.dart';
 
 /// Clipboard history screen — shows synced clipboard entries.
 class ClipboardScreen extends ConsumerStatefulWidget {
