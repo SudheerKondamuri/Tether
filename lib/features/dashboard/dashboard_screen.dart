@@ -7,6 +7,7 @@ import 'package:tether/shared/widgets/tether_card.dart';
 import 'package:tether/shared/widgets/tether_badge.dart';
 import 'package:tether/shared/widgets/status_indicator.dart';
 import 'package:tether/core/networking/connection_manager.dart';
+import 'package:tether/core/providers.dart';
 
 /// Linux Dashboard screen — system overview, device info, uptime, stats.
 class DashboardScreen extends ConsumerStatefulWidget {
