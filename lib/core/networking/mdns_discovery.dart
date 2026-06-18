@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'package:bonsoir/bonsoir.dart';
 import 'package:crypto/crypto.dart';
+import 'package:mdns_dart/mdns_dart.dart';
 import 'package:tether/shared/constants.dart';
 import 'package:tether/core/database/app_database.dart';
 
@@ -101,8 +101,8 @@ class MdnsDiscovery {
   // Ephemeral session identification
   final int discoverySessionNonce = Random.secure().nextInt(10000000);
 
-  BonsoirBroadcast? _broadcast;
-  BonsoirDiscovery? _discovery;
+  MDNSServer? _server;
+  StreamSubscription<ServiceEntry>? _discoverySub;
   
   RawDatagramSocket? _udpListenerSocket;
   RawDatagramSocket? _udpDiscoverySocket;
@@ -179,19 +179,28 @@ class MdnsDiscovery {
 
     // ─── mDNS Broadcast ───
     try {
-      final service = BonsoirService(
-        name: deviceName,
-        type: TetherConstants.mdnsServiceType,
+      final txt = [
+        'nonce=$discoverySessionNonce',
+        if (discoveryHash != null) 'dh=$discoveryHash',
+      ];
+
+      final serviceType = TetherConstants.mdnsServiceType;
+      final mDnsService = await MDNSService.create(
+        instance: deviceName,
+        service: serviceType,
         port: port,
-        attributes: {
-          'nonce': discoverySessionNonce.toString(),
-          if (discoveryHash != null) 'dh': discoveryHash,
-        },
+        txt: txt,
       );
 
-      _broadcast = BonsoirBroadcast(service: service);
-      await _broadcast!.ready;
-      await _broadcast!.start();
+      final zone = MultiServiceZone();
+      zone.addService(mDnsService);
+
+      _server = MDNSServer(MDNSServerConfig(
+        zone: zone,
+        reuseAddress: true,
+        reusePort: true,
+      ));
+      await _server!.start();
     } catch (_) {
       // If mDNS fails (e.g. unsupported platform features), proceed to UDP
     }
@@ -218,8 +227,8 @@ class MdnsDiscovery {
 
   /// Stop broadcasting.
   Future<void> stopBroadcast() async {
-    await _broadcast?.stop();
-    _broadcast = null;
+    await _server?.stop();
+    _server = null;
 
     _udpListenerSocket?.close();
     _udpListenerSocket = null;
@@ -232,43 +241,40 @@ class MdnsDiscovery {
 
     // ─── mDNS Discovery ───
     try {
-      _discovery = BonsoirDiscovery(
-        type: TetherConstants.mdnsServiceType,
-      );
-      await _discovery!.ready;
+      final serviceType = TetherConstants.mdnsServiceType;
+      final stream = await MDNSClient.lookup(serviceType);
 
-      _discovery!.eventStream!.listen((event) {
-        if (event.type == BonsoirDiscoveryEventType.discoveryServiceFound) {
-          event.service!.resolve(_discovery!.serviceResolver);
-        } else if (event.type ==
-            BonsoirDiscoveryEventType.discoveryServiceResolved) {
-          final resolved = event.service as ResolvedBonsoirService;
-          final nonceStr = resolved.attributes['nonce'] ?? '0';
-          final nonce = int.tryParse(nonceStr) ?? 0;
-          final discoveryHash = resolved.attributes['dh'];
-          final device = DiscoveredDevice(
-            name: resolved.name,
-            ip: resolved.host ?? '',
-            port: resolved.port,
-            nonce: nonce,
-            discoveryHash: discoveryHash,
-          );
-          if (device.ip.isNotEmpty) {
-            resetSilenceCounter();
-            _discovered.add(device);
-            _devicesController.add(_discovered.toList());
-            _updateDevicesInSettings();
+      _discoverySub = stream.listen((entry) {
+        final attributes = <String, String>{};
+        for (final field in entry.infoFields) {
+          final idx = field.indexOf('=');
+          if (idx != -1) {
+            attributes[field.substring(0, idx)] = field.substring(idx + 1);
+          } else {
+            attributes[field] = '';
           }
-        } else if (event.type ==
-            BonsoirDiscoveryEventType.discoveryServiceLost) {
-          _discovered.removeWhere(
-              (d) => d.name == event.service?.name);
+        }
+
+        final nonceStr = attributes['nonce'] ?? '0';
+        final nonce = int.tryParse(nonceStr) ?? 0;
+        final discoveryHash = attributes['dh'];
+        final ip = entry.primaryAddress?.address ?? '';
+
+        final device = DiscoveredDevice(
+          name: entry.name,
+          ip: ip,
+          port: entry.port,
+          nonce: nonce,
+          discoveryHash: discoveryHash,
+        );
+
+        if (device.ip.isNotEmpty) {
+          resetSilenceCounter();
+          _discovered.add(device);
           _devicesController.add(_discovered.toList());
           _updateDevicesInSettings();
         }
       });
-
-      await _discovery!.start();
     } catch (_) {}
 
     // ─── Stale Device Cleanup ───
@@ -369,8 +375,8 @@ class MdnsDiscovery {
 
   /// Stop discovering.
   Future<void> stopDiscovery() async {
-    await _discovery?.stop();
-    _discovery = null;
+    await _discoverySub?.cancel();
+    _discoverySub = null;
 
     _udpPingTimer?.cancel();
     _udpPingTimer = null;
