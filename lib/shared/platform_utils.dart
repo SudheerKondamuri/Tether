@@ -1,8 +1,10 @@
 import 'dart:io' show Platform;
-import 'package:flutter/widgets.dart';
 
 /// Platform abstraction layer — all platform checks go through here.
 /// Never use Platform.isAndroid directly in UI or feature code.
+///
+/// This file is **Flutter-free**: it imports only `dart:io`.
+/// Daemon code (`bin/tetherd.dart`) and the Flutter GUI both import it.
 class PlatformUtils {
   PlatformUtils._();
 
@@ -43,28 +45,12 @@ class PlatformUtils {
     return fallback;
   }
 
-  /// Returns a widget based on the current platform.
-  static Widget platformWidget({
-    Widget Function()? linux,
-    Widget Function()? android,
-    Widget Function()? macos,
-    Widget Function()? windows,
-    Widget Function()? fallback,
-  }) {
-    if (Platform.isLinux && linux != null) return linux();
-    if (Platform.isAndroid && android != null) return android();
-    if (Platform.isMacOS && macos != null) return macos();
-    if (Platform.isWindows && windows != null) return windows();
-    if (fallback != null) return fallback();
-    return const SizedBox.shrink();
-  }
-
   /// Executes a callback only on the specified platform.
   static void onPlatform({
-    VoidCallback? linux,
-    VoidCallback? android,
-    VoidCallback? macos,
-    VoidCallback? windows,
+    void Function()? linux,
+    void Function()? android,
+    void Function()? macos,
+    void Function()? windows,
   }) {
     if (Platform.isLinux) linux?.call();
     if (Platform.isAndroid) android?.call();
