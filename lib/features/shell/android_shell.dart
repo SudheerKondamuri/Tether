@@ -7,6 +7,7 @@ import 'package:tether/features/files/files_screen.dart';
 import 'package:tether/features/settings/settings_screen.dart';
 import 'package:tether/features/pairing/pairing_dialog.dart';
 import 'package:tether/core/networking/connection_manager.dart';
+import 'package:tether/core/providers.dart';
 import 'package:tether/shared/widgets/disconnected_overlay.dart';
 
 /// Android bottom-navigation shell.
