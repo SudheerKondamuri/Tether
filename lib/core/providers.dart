@@ -219,6 +219,8 @@ final fileServiceProvider = Provider<FileService>((ref) {
   
   if (PlatformUtils.isLinux) {
     service.getPeerOverride = () => ref.read(daemonClientProvider).peer;
+  } else if (PlatformUtils.isAndroid) {
+    service.getPeerOverride = () => ref.read(connectedDeviceProvider).valueOrNull;
   }
   
   getApplicationSupportDirectory().then((supportDir) {
