@@ -6,6 +6,7 @@ import 'package:tether/shared/widgets/status_indicator.dart';
 import 'package:tether/shared/widgets/tether_badge.dart';
 import 'package:tether/features/shell/linux_shell.dart';
 import 'package:tether/core/networking/connection_manager.dart';
+import 'package:tether/core/providers.dart';
 
 /// Left navigation sidebar (200px) with device card and nav items.
 class NavSidebar extends ConsumerWidget {
