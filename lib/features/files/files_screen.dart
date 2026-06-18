@@ -6,6 +6,7 @@ import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/widgets/tether_button.dart';
 import 'package:tether/core/services/file_service.dart';
 import 'package:tether/core/networking/connection_manager.dart';
+import 'package:tether/core/providers.dart';
 import 'package:file_picker/file_picker.dart';
 
 /// File browser screen — browse remote device files.
