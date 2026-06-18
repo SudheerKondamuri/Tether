@@ -36,6 +36,16 @@ class FileService {
   String? downloadDirOverride;
   String? serveDirOverride;
 
+  /// Optional callback to override the active peer resolution (e.g. on Linux GUI client).
+  ConnectedDevice? Function()? getPeerOverride;
+
+  ConnectedDevice? get _activePeer {
+    if (getPeerOverride != null) {
+      return getPeerOverride!();
+    }
+    return _connectionManager.peer;
+  }
+
   FileService({
     required ConnectionManager connectionManager,
   }) : _connectionManager = connectionManager;
@@ -77,7 +87,7 @@ class FileService {
 
   /// List files on the remote peer's file server.
   Future<List<FileItem>> listRemoteFiles(String path) async {
-    final peer = _connectionManager.peer;
+    final peer = _activePeer;
     if (peer == null) throw Exception('No peer connected');
 
     final client = HttpClient();
@@ -110,7 +120,7 @@ class FileService {
 
   /// Download a file from the remote peer's file server.
   Future<void> downloadFile(String remoteRelativePath, String localDestPath) async {
-    final peer = _connectionManager.peer;
+    final peer = _activePeer;
     if (peer == null) throw Exception('No peer connected');
 
     final client = HttpClient();
@@ -150,7 +160,7 @@ class FileService {
 
   /// Upload a file to the remote peer's file server.
   Future<void> uploadFile(File localFile) async {
-    final peer = _connectionManager.peer;
+    final peer = _activePeer;
     if (peer == null) throw Exception('No peer connected');
 
     final filename = p.basename(localFile.path);
