@@ -150,7 +150,14 @@ class HttpFileServer {
     // The filename comes from the X-Filename header
     final rawFilename = request.headers['x-filename'] ?? 'unnamed';
     final filename = Uri.decodeComponent(rawFilename);
-    final destPath = p.join(_sharedDirectory!, filename);
+    
+    // Save to Downloads folder if it exists under _sharedDirectory to avoid cluttering serve root
+    var targetDir = _sharedDirectory!;
+    final downloadsDir = p.join(_sharedDirectory!, 'Downloads');
+    if (await Directory(downloadsDir).exists()) {
+      targetDir = downloadsDir;
+    }
+    final destPath = p.join(targetDir, filename);
 
     // Security: prevent path traversal
     final canonical = p.canonicalize(destPath);
