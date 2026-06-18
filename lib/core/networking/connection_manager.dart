@@ -2,17 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
-import 'package:flutter/services.dart';
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' hide Column;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:tether/core/networking/tcp_server.dart';
 import 'package:tether/core/networking/tcp_client.dart';
 import 'package:tether/core/networking/packet_protocol.dart';
 import 'package:tether/shared/constants.dart';
 import 'package:tether/shared/platform_utils.dart';
-import 'package:tether/core/database/database_provider.dart';
 import 'package:tether/core/database/app_database.dart';
 import 'package:tether/core/networking/mdns_discovery.dart';
 
@@ -70,10 +67,19 @@ enum TetherConnectionState { disconnected, searching, connecting, connected }
 
 /// Orchestrates TCP server + client, manages connection lifecycle.
 /// Sole owner of reconnection policy, tie-breaking, and auto-reconnect.
+///
+/// **Flutter-free**: depends on `AppDatabase` and `MdnsDiscovery` via
+/// constructor injection. No `Ref`, no `MethodChannel`, no `package:flutter`.
 class ConnectionManager {
-  final Ref ref;
+  final AppDatabase _db;
+  final MdnsDiscovery _mdns;
   final TcpServer _server = TcpServer();
   final TcpClient _client = TcpClient();
+
+  /// Android-specific: optional MethodChannel callback for `connectTo`/`disconnect`.
+  /// Set by the Flutter app layer only.
+  Future<bool> Function(String host, int port)? androidConnectTo;
+  Future<void> Function()? androidDisconnect;
 
   /// No longer needed — there is no background Dart isolate.
   /// Kept for API compatibility; always false.
@@ -112,21 +118,21 @@ class ConnectionManager {
   /// (written by Kotlin's NativeConnectionManager).
   Timer? _androidSyncTimer;
 
-  ConnectionManager({required this.ref});
+  ConnectionManager({required AppDatabase db, required MdnsDiscovery mdns})
+      : _db = db,
+        _mdns = mdns;
 
   Future<void> init() async {
-    final db = ref.read(databaseProvider);
-    
     // Load or generate device ID
-    var storedId = await db.getSetting('device_id');
+    var storedId = await _db.getSetting('device_id');
     if (storedId == null || storedId.isEmpty) {
       storedId = const Uuid().v4();
-      await db.setSetting('device_id', storedId);
+      await _db.setSetting('device_id', storedId);
     }
     _deviceId = storedId;
 
     // Load or generate device Name
-    var storedName = await db.getSetting('device_name');
+    var storedName = await _db.getSetting('device_name');
     if (storedName == null || storedName.isEmpty || storedName == 'localhost') {
       if (PlatformUtils.isAndroid) {
         // On Android, don't write a name from Dart — let Kotlin's
@@ -135,7 +141,7 @@ class ConnectionManager {
         storedName = 'Android Device';
       } else {
         storedName = await _resolveHostname();
-        await db.setSetting('device_name', storedName);
+        await _db.setSetting('device_name', storedName);
       }
     }
     _deviceName = storedName;
@@ -148,12 +154,12 @@ class ConnectionManager {
       _startAndroidPeerSync();
     } else {
       // On Desktop, Dart owns the connection state.
-      await db.setSetting('connection_state', _state.name);
+      await _db.setSetting('connection_state', _state.name);
       _updatePeerInSettings(_peer);
     }
 
     // Listen to discovery events to evaluate peers for auto-connection
-    ref.read(mdnsDiscoveryProvider).devicesStream.listen((devices) {
+    _mdns.devicesStream.listen((devices) {
       if (_state == TetherConnectionState.connected || _state == TetherConnectionState.connecting) {
         return;
       }
@@ -169,8 +175,7 @@ class ConnectionManager {
   }
 
   void evaluateDiscoveredPeer(String peerName, String host, int port, int peerNonce, String? discoveryHash) {
-    final mdns = ref.read(mdnsDiscoveryProvider);
-    final myNonce = mdns.discoverySessionNonce;
+    final myNonce = _mdns.discoverySessionNonce;
 
     if (myNonce == peerNonce) return; // Self detection protection
 
@@ -190,8 +195,7 @@ class ConnectionManager {
   }
 
   Future<void> _tryAutoConnect(String host, int port, int peerNonce, String discoveryHash) async {
-    final db = ref.read(databaseProvider);
-    final pairedDevices = await db.getPairedDevices();
+    final pairedDevices = await _db.getPairedDevices();
     
     // Check hashes against the stable deviceId
     final knownIds = pairedDevices.map((d) => d.deviceId).toList();
@@ -199,8 +203,7 @@ class ConnectionManager {
     final matchedId = CryptoUtils.verifyDiscoveryHash(discoveryHash, knownIds);
     if (matchedId != null) {
       developer.log('Auto-connecting to paired device (ID match: $matchedId)');
-      final mdns = ref.read(mdnsDiscoveryProvider);
-      final myNonce = mdns.discoverySessionNonce;
+      final myNonce = _mdns.discoverySessionNonce;
       if (myNonce > peerNonce) {
         connectTo(host: host, port: port);
       } else {
@@ -210,11 +213,10 @@ class ConnectionManager {
   }
 
   void _updatePeerInSettings(ConnectedDevice? peer) {
-    final db = ref.read(databaseProvider);
     if (peer == null) {
-      db.setSetting('connected_peer', '');
+      _db.setSetting('connected_peer', '');
     } else {
-      db.setSetting('connected_peer', jsonEncode(peer.toJson()));
+      _db.setSetting('connected_peer', jsonEncode(peer.toJson()));
     }
   }
 
@@ -261,8 +263,7 @@ class ConnectionManager {
         return;
       }
 
-      final db = ref.read(databaseProvider);
-      final pairedDevices = await db.getPairedDevices();
+      final pairedDevices = await _db.getPairedDevices();
       if (pairedDevices.isEmpty) return;
 
       for (final device in pairedDevices) {
@@ -300,10 +301,9 @@ class ConnectionManager {
   /// On Android, Kotlin writes these values — Dart reads them.
   Future<void> _syncPeerFromDb() async {
     try {
-      final db = ref.read(databaseProvider);
 
       // Sync connection state
-      final stateVal = await db.getSetting('connection_state');
+      final stateVal = await _db.getSetting('connection_state');
       if (stateVal != null) {
         final newState = TetherConnectionState.values.firstWhere(
           (e) => e.name == stateVal,
@@ -316,7 +316,7 @@ class ConnectionManager {
       }
 
       // Sync peer info
-      final peerVal = await db.getSetting('connected_peer');
+      final peerVal = await _db.getSetting('connected_peer');
       if (peerVal != null && peerVal.isNotEmpty) {
         try {
           final peerJson = jsonDecode(peerVal) as Map<String, dynamic>;
@@ -342,20 +342,19 @@ class ConnectionManager {
     int port = TetherConstants.tcpPort,
   }) async {
     if (PlatformUtils.isAndroid) {
-      // Delegate to native Kotlin ForegroundService via direct MethodChannel
+      // Delegate to native Kotlin ForegroundService via callback
       try {
-        await const MethodChannel(TetherConstants.foregroundServiceChannel)
-            .invokeMethod('connectTo', {
-          'host': host,
-          'port': port,
-        });
+        if (androidConnectTo != null) {
+          await androidConnectTo!(host, port);
+        } else {
+          developer.log('androidConnectTo callback is null');
+        }
         
-        final db = ref.read(databaseProvider);
-        int attempts = 0;
+          int attempts = 0;
         while (attempts < 25) { // 5 seconds max
           await Future.delayed(const Duration(milliseconds: 200));
-          final stateVal = await db.getSetting('connection_state');
-          final peerVal = await db.getSetting('connected_peer');
+          final stateVal = await _db.getSetting('connection_state');
+          final peerVal = await _db.getSetting('connected_peer');
           if (stateVal == TetherConnectionState.connected.name && peerVal != null && peerVal.isNotEmpty) {
             try {
               final peerJson = jsonDecode(peerVal) as Map<String, dynamic>;
@@ -522,8 +521,7 @@ class ConnectionManager {
         .map((b) => b.toRadixString(16).padLeft(2, '0'))
         .join(':');
     
-    final db = ref.read(databaseProvider);
-    db.upsertPairedDevice(PairedDevicesCompanion(
+    _db.upsertPairedDevice(PairedDevicesCompanion(
       deviceId: Value(peerDeviceId),
       name: Value(peerName),
       platform: Value(peerPlatform),
@@ -549,24 +547,26 @@ class ConnectionManager {
     _state = newState;
     _stateController.add(newState);
     // Write state to database settings for UI cross-isolate synchronization
-    ref.read(databaseProvider).setSetting('connection_state', newState.name);
+    _db.setSetting('connection_state', newState.name);
   }
 
   /// Disconnect from the current peer (user-initiated).
   /// This sets the explicit flag to prevent auto-reconnect.
   Future<void> disconnect() async {
     if (PlatformUtils.isAndroid) {
-      // Delegate to native Kotlin ForegroundService via direct MethodChannel
+      // Delegate to native Kotlin ForegroundService via callback
       try {
-        await const MethodChannel(TetherConstants.foregroundServiceChannel)
-            .invokeMethod('disconnect');
+        if (androidDisconnect != null) {
+          await androidDisconnect!();
+        } else {
+          developer.log('androidDisconnect callback is null');
+        }
         
         // Poll DB for state change — Kotlin writes bypass Drift's watch notifications
-        final db = ref.read(databaseProvider);
-        int attempts = 0;
+          int attempts = 0;
         while (attempts < 12) { // 2.4 seconds max
           await Future.delayed(const Duration(milliseconds: 200));
-          final stateVal = await db.getSetting('connection_state');
+          final stateVal = await _db.getSetting('connection_state');
           if (stateVal == TetherConnectionState.disconnected.name) {
             break;
           }
@@ -645,57 +645,3 @@ Future<String> _resolveHostname() async {
   // Final fallback
   return platformName.isNotEmpty ? platformName : 'Unknown-Device';
 }
-
-// ─── Riverpod Providers ───
-
-final connectionManagerProvider = Provider<ConnectionManager>((ref) {
-  final manager = ConnectionManager(ref: ref);
-  ref.onDispose(() => manager.dispose());
-  return manager;
-});
-
-final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
-  if (PlatformUtils.isAndroid) {
-    // CRITICAL: Use periodic polling instead of Drift's watchSetting().
-    // The Kotlin NativeConnectionManager writes connection_state directly
-    // to SQLite via TetherDatabase.kt, bypassing Drift's internal change
-    // notification system. Drift's watch() only fires when Drift itself
-    // writes — so the UI would never see Kotlin's state updates.
-    final db = ref.watch(databaseProvider);
-    return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
-        .asyncMap((_) => db.getSetting('connection_state'))
-        .map((val) {
-      if (val == null) return TetherConnectionState.disconnected;
-      return TetherConnectionState.values.firstWhere(
-        (e) => e.name == val,
-        orElse: () => TetherConnectionState.disconnected,
-      );
-    }).distinct();
-  }
-  final manager = ref.watch(connectionManagerProvider);
-  return manager.stateStream;
-});
-
-final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
-  if (PlatformUtils.isAndroid) {
-    // CRITICAL: Same polling strategy as connectionStateProvider.
-    // Kotlin writes connected_peer directly to SQLite, bypassing Drift.
-    final db = ref.watch(databaseProvider);
-    return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
-        .asyncMap((_) => db.getSetting('connected_peer'))
-        .map((val) {
-      if (val == null || val.isEmpty) return null;
-      try {
-        return ConnectedDevice.fromJson(jsonDecode(val) as Map<String, dynamic>);
-      } catch (_) {
-        return null;
-      }
-    }).distinct((a, b) {
-      if (a == null && b == null) return true;
-      if (a == null || b == null) return false;
-      return a.deviceId == b.deviceId && a.ip == b.ip;
-    });
-  }
-  final manager = ref.watch(connectionManagerProvider);
-  return manager.peerStream;
-});
