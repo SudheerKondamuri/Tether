@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/core/networking/http_file_server.dart';
@@ -34,6 +32,10 @@ class FileService {
   final _transferProgressController = StreamController<double>.broadcast();
   Stream<double> get transferProgressStream => _transferProgressController.stream;
 
+  /// Optional overrides to avoid path_provider in pure Dart contexts (like the daemon).
+  String? downloadDirOverride;
+  String? serveDirOverride;
+
   FileService({
     required ConnectionManager connectionManager,
   }) : _connectionManager = connectionManager;
@@ -44,13 +46,12 @@ class FileService {
     Directory serveDir;
 
     if (Platform.isAndroid) {
-      final extDownloads = await getDownloadsDirectory();
-      downloadDir = extDownloads ?? Directory('/storage/emulated/0/Download');
-      serveDir = Directory('/storage/emulated/0');
+      downloadDir = Directory(downloadDirOverride ?? '/storage/emulated/0/Download');
+      serveDir = Directory(serveDirOverride ?? '/storage/emulated/0');
     } else {
-      downloadDir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-      final homePath = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
-      serveDir = homePath != null ? Directory(homePath) : downloadDir;
+      final homePath = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '/tmp';
+      downloadDir = Directory(downloadDirOverride ?? p.join(homePath, 'Downloads'));
+      serveDir = Directory(serveDirOverride ?? homePath);
     }
 
     _sharedDirectory = downloadDir.path;
@@ -197,11 +198,4 @@ class FileService {
   }
 }
 
-// ─── Riverpod Providers ───
 
-final fileServiceProvider = Provider<FileService>((ref) {
-  final connManager = ref.watch(connectionManagerProvider);
-  final service = FileService(connectionManager: connManager);
-  ref.onDispose(() => service.dispose());
-  return service;
-});
