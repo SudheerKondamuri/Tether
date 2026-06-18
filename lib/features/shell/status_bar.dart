@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/shared/theme.dart';
 import 'package:tether/shared/widgets/status_indicator.dart';
 import 'package:tether/core/networking/connection_manager.dart';
+import 'package:tether/core/providers.dart';
 
 /// Bottom status bar showing live connection state, IP, latency (28px).
 class StatusBar extends ConsumerWidget {
