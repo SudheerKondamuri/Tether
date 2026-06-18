@@ -108,6 +108,10 @@ class ConnectionManager {
   /// Whether the last disconnect was explicit (user-initiated).
   bool _explicitDisconnect = false;
 
+  /// On Android, periodically syncs _peer and _state from the database
+  /// (written by Kotlin's NativeConnectionManager).
+  Timer? _androidSyncTimer;
+
   ConnectionManager({required this.ref});
 
   Future<void> init() async {
@@ -137,8 +141,16 @@ class ConnectionManager {
     _deviceName = storedName;
 
     // Initialize state in database settings
-    await db.setSetting('connection_state', _state.name);
-    _updatePeerInSettings(_peer);
+    if (PlatformUtils.isAndroid) {
+      // On Android, Kotlin owns the connection state in the database.
+      // Don't overwrite — instead read existing state and start syncing.
+      await _syncPeerFromDb();
+      _startAndroidPeerSync();
+    } else {
+      // On Desktop, Dart owns the connection state.
+      await db.setSetting('connection_state', _state.name);
+      _updatePeerInSettings(_peer);
+    }
 
     // Listen to discovery events to evaluate peers for auto-connection
     ref.read(mdnsDiscoveryProvider).devicesStream.listen((devices) {
@@ -274,6 +286,55 @@ class ConnectionManager {
     _autoReconnectTimer = null;
   }
 
+  /// On Android, start a periodic timer that reads the peer state from
+  /// the database (written by Kotlin's NativeConnectionManager) and
+  /// updates the Dart-side _peer/_state fields so FileService etc. work.
+  void _startAndroidPeerSync() {
+    _androidSyncTimer?.cancel();
+    _androidSyncTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      _syncPeerFromDb();
+    });
+  }
+
+  /// Read connection state and peer info from the database.
+  /// On Android, Kotlin writes these values — Dart reads them.
+  Future<void> _syncPeerFromDb() async {
+    try {
+      final db = ref.read(databaseProvider);
+
+      // Sync connection state
+      final stateVal = await db.getSetting('connection_state');
+      if (stateVal != null) {
+        final newState = TetherConnectionState.values.firstWhere(
+          (e) => e.name == stateVal,
+          orElse: () => TetherConnectionState.disconnected,
+        );
+        if (_state != newState) {
+          _state = newState;
+          _stateController.add(newState);
+        }
+      }
+
+      // Sync peer info
+      final peerVal = await db.getSetting('connected_peer');
+      if (peerVal != null && peerVal.isNotEmpty) {
+        try {
+          final peerJson = jsonDecode(peerVal) as Map<String, dynamic>;
+          final newPeer = ConnectedDevice.fromJson(peerJson);
+          if (_peer == null || _peer!.deviceId != newPeer.deviceId || _peer!.ip != newPeer.ip) {
+            _peer = newPeer;
+            _peerController.add(_peer);
+          }
+        } catch (_) {}
+      } else if (_peer != null) {
+        _peer = null;
+        _peerController.add(null);
+      }
+    } catch (e) {
+      developer.log('Android peer sync failed: $e');
+    }
+  }
+
   /// Connect to a peer device as a client.
   /// Protected by a mutex to prevent concurrent connection races.
   Future<bool> connectTo({
@@ -299,6 +360,11 @@ class ConnectionManager {
             try {
               final peerJson = jsonDecode(peerVal) as Map<String, dynamic>;
               if (peerJson['ip'] == host) {
+                _peer = ConnectedDevice.fromJson(peerJson);
+                _peerController.add(_peer);
+                _state = TetherConnectionState.connected;
+                _stateController.add(_state);
+                _stopAutoReconnect();
                 return true;
               }
             } catch (_) {}
@@ -534,6 +600,7 @@ class ConnectionManager {
 
   /// Disconnect and stop everything.
   Future<void> dispose() async {
+    _androidSyncTimer?.cancel();
     _stopAutoReconnect();
     await _client.disconnect();
     await _server.stop();
