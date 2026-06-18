@@ -46,6 +46,14 @@ class FileService {
     return _connectionManager.peer;
   }
 
+  String _getPeerIp(ConnectedDevice peer) {
+    final ip = peer.ip;
+    if (Platform.isAndroid && (ip == '127.0.0.1' || ip == 'localhost' || ip == '::1')) {
+      return '10.0.2.2';
+    }
+    return ip;
+  }
+
   FileService({
     required ConnectionManager connectionManager,
   }) : _connectionManager = connectionManager;
@@ -93,7 +101,8 @@ class FileService {
     final client = HttpClient();
     try {
       final cleanPath = path == 'root' || path.isEmpty ? '' : path;
-      final uri = Uri.parse('http://${peer.ip}:${TetherConstants.httpFilePort}/api/files/$cleanPath');
+      final peerIp = _getPeerIp(peer);
+      final uri = Uri.parse('http://$peerIp:${TetherConstants.httpFilePort}/api/files/$cleanPath');
       final request = await client.getUrl(uri).timeout(const Duration(seconds: 5));
       final response = await request.close();
 
@@ -125,7 +134,8 @@ class FileService {
 
     final client = HttpClient();
     try {
-      final uri = Uri.parse('http://${peer.ip}:${TetherConstants.httpFilePort}/api/download/$remoteRelativePath');
+      final peerIp = _getPeerIp(peer);
+      final uri = Uri.parse('http://$peerIp:${TetherConstants.httpFilePort}/api/download/$remoteRelativePath');
       final request = await client.getUrl(uri);
       final response = await request.close();
 
@@ -168,7 +178,8 @@ class FileService {
 
     final client = HttpClient();
     try {
-      final uri = Uri.parse('http://${peer.ip}:${TetherConstants.httpFilePort}/api/upload');
+      final peerIp = _getPeerIp(peer);
+      final uri = Uri.parse('http://$peerIp:${TetherConstants.httpFilePort}/api/upload');
       final request = await client.postUrl(uri);
       
       request.headers.set('X-Filename', filename);
