@@ -163,14 +163,7 @@ class DaemonClient {
   }
 
   Future<void> _spawnDaemon() async {
-    // 1. Try local ./tetherd executable
-    final localExec = File('./tetherd');
-    if (await localExec.exists()) {
-      await Process.start('./tetherd', [], mode: ProcessStartMode.detached);
-      return;
-    }
-
-    // 2. Try adjacent to platform resolved executable path
+    // 1. Try adjacent to resolved executable path (production release bundle)
     final resolvedPath = Platform.resolvedExecutable;
     final parentDir = Directory(p.dirname(resolvedPath));
     final adjacentExec = File(p.join(parentDir.path, 'tetherd'));
@@ -179,7 +172,47 @@ class DaemonClient {
       return;
     }
 
-    // 3. Fallback to dart run bin/tetherd.dart (for development mode)
+    // 2. Try searching upwards from resolved executable to find project root (development/debug mode)
+    var dir = Directory(parentDir.path);
+    while (true) {
+      // Check for compiled CLI bundle in build directory
+      final devFile = File(p.join(dir.path, 'build', 'cli', 'bundle', 'bin', 'tetherd'));
+      if (await devFile.exists()) {
+        await Process.start(
+          devFile.path,
+          [],
+          mode: ProcessStartMode.detached,
+          workingDirectory: p.dirname(devFile.path),
+        );
+        return;
+      }
+
+      // Check for source file in project root
+      final devSrc = File(p.join(dir.path, 'bin', 'tetherd.dart'));
+      if (await devSrc.exists()) {
+        await Process.start(
+          'dart',
+          ['run', 'bin/tetherd.dart'],
+          mode: ProcessStartMode.detached,
+          workingDirectory: dir.path,
+        );
+        return;
+      }
+
+      final parent = dir.parent;
+      if (parent.path == dir.path) {
+        break; // Reached system root
+      }
+      dir = parent;
+    }
+
+    // 3. Last resort fallback to current directory ./tetherd or bin/tetherd.dart
+    final localExec = File('./tetherd');
+    if (await localExec.exists()) {
+      await Process.start('./tetherd', [], mode: ProcessStartMode.detached);
+      return;
+    }
+
     final devPath = File('bin/tetherd.dart');
     if (await devPath.exists()) {
       await Process.start('dart', ['run', 'bin/tetherd.dart'], mode: ProcessStartMode.detached);
