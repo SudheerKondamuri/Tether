@@ -217,6 +217,10 @@ final fileServiceProvider = Provider<FileService>((ref) {
   final connManager = ref.watch(connectionManagerProvider);
   final service = FileService(connectionManager: connManager);
   
+  if (PlatformUtils.isLinux) {
+    service.getPeerOverride = () => ref.read(daemonClientProvider).peer;
+  }
+  
   getApplicationSupportDirectory().then((supportDir) {
     service.serveDirOverride = PlatformUtils.isAndroid ? '/storage/emulated/0' : Platform.environment['HOME'];
   });
