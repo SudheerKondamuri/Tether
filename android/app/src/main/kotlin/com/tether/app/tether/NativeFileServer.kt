@@ -25,7 +25,15 @@ class NativeFileServer(private val context: Context) {
 
     private var serverSocket: ServerSocket? = null
     private val executor: ExecutorService = Executors.newCachedThreadPool()
-    private val sharedDirectory = context.filesDir
+    private val sharedDirectory: File
+        get() {
+            val extStorage = File("/storage/emulated/0")
+            return if (extStorage.exists() && extStorage.canRead()) {
+                extStorage
+            } else {
+                context.filesDir
+            }
+        }
     @Volatile private var isRunning = false
 
     /**
@@ -315,7 +323,9 @@ class NativeFileServer(private val context: Context) {
             val rawFilename = headerMap["x-filename"] ?: "upload_${System.currentTimeMillis()}"
             val filename = URLDecoder.decode(rawFilename, "UTF-8")
             
-            val destFile = File(sharedDirectory, filename)
+            val downloadDir = File(sharedDirectory, "Download")
+            val targetDir = if (downloadDir.exists() && downloadDir.isDirectory) downloadDir else sharedDirectory
+            val destFile = File(targetDir, filename)
             if (!isSafeFile(destFile)) {
                 val err = JSONObject().put("error", "Access denied")
                 sendJsonResponse(output, 403, "Forbidden", err)
