@@ -14,6 +14,7 @@ import 'package:tether/core/networking/connection_manager.dart';
 import 'package:tether/shared/widgets/disconnected_overlay.dart';
 import 'package:path/path.dart' as p;
 import 'package:tether/core/services/file_service.dart';
+import 'package:tether/core/providers.dart';
 import 'package:tether/shared/widgets/tether_button.dart';
 
 /// Currently selected navigation index.
