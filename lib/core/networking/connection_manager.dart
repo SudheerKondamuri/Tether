@@ -342,23 +342,26 @@ class ConnectionManager {
     int port = TetherConstants.tcpPort,
   }) async {
     if (PlatformUtils.isAndroid) {
-      // Delegate to native Kotlin ForegroundService via callback
       try {
         if (androidConnectTo != null) {
           await androidConnectTo!(host, port);
         } else {
-          developer.log('androidConnectTo callback is null');
+          developer.log('androidConnectTo callback is null! Injection failed.');
+          return false;
         }
         
-          int attempts = 0;
+        // Wait for Kotlin to connect and update the SQLite database
+        int attempts = 0;
         while (attempts < 25) { // 5 seconds max
           await Future.delayed(const Duration(milliseconds: 200));
           final stateVal = await _db.getSetting('connection_state');
           final peerVal = await _db.getSetting('connected_peer');
+          
           if (stateVal == TetherConnectionState.connected.name && peerVal != null && peerVal.isNotEmpty) {
             try {
               final peerJson = jsonDecode(peerVal) as Map<String, dynamic>;
               if (peerJson['ip'] == host) {
+                // Update Dart state immediately to unblock UI
                 _peer = ConnectedDevice.fromJson(peerJson);
                 _peerController.add(_peer);
                 _state = TetherConnectionState.connected;
@@ -370,9 +373,8 @@ class ConnectionManager {
           }
           attempts++;
         }
-        return false;
+        return false; // Timed out
       } catch (e) {
-        developer.log('Failed to delegate connectTo to native service: $e');
         return false;
       }
     }
