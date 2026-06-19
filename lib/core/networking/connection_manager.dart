@@ -427,7 +427,8 @@ class ConnectionManager {
       // ── Fixed Handshake Tie-Breaker Guard ──
       // If we are currently trying to connect or already connected, and we receive 
       // an inbound handshake as a server, a symmetrical collision occurred. 
-      if (_state == TetherConnectionState.connecting || _state == TetherConnectionState.connected) {
+      if (_state == TetherConnectionState.connecting ||
+          (_state == TetherConnectionState.connected && _peer?.deviceId == packet.deviceId)) {
         if (deviceId.compareTo(packet.deviceId) < 0) {
           developer.log('Symmetric connection conflict detected. Our ID is lower — yielding server socket.');
           socket.destroy();
