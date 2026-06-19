@@ -9,8 +9,8 @@ class TetherColors {
   static const Color surfaceHigher = Color(0xFF1C1C22);
   static const Color borderSubtle = Color(0xFF2A2A35);
   static const Color borderStrong = Color(0xFF3D3D50);
-  static const Color accentPrimary = Color(0xFF6E56CF);
-  static const Color accentSecondary = Color(0xFF00C7BE);
+  static const Color accentPrimary = Color(0xFF5B85AA);
+  static const Color accentSecondary = Color(0xFFA3BACF);
   static const Color accentDanger = Color(0xFFFF4D6A);
   static const Color accentWarning = Color(0xFFF5A623);
   static const Color textPrimary = Color(0xFFF0F0F5);
