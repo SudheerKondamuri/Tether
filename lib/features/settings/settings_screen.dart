@@ -31,8 +31,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadSettings();
     _checkPermission();
     _checkBatteryOptimization();
+  }
+
+  Future<void> _loadSettings() async {
+    final db = ref.read(databaseProvider);
+    final clipSync = await db.getSetting('clipboard_sync');
+    final notifMirror = await db.getSetting('notification_mirror');
+    if (mounted) {
+      setState(() {
+        if (clipSync != null) _clipboardSync = clipSync == 'true';
+        if (notifMirror != null) _notificationMirror = notifMirror == 'true';
+      });
+    }
   }
 
   @override
@@ -257,7 +270,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
                   label: 'Clipboard Sync',
                   description: 'Share clipboard between devices',
                   value: _clipboardSync,
-                  onChanged: (v) => setState(() => _clipboardSync = v),
+                  onChanged: (v) async {
+                    setState(() => _clipboardSync = v);
+                    await ref.read(databaseProvider).setSettingBool('clipboard_sync', v);
+                  },
                 ),
                 const Divider(
                     color: TetherColors.borderSubtle, height: 1),
@@ -278,10 +294,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with WidgetsBin
                           _notificationMirror = true;
                           _notificationPermissionGranted = true;
                         });
+                        await ref.read(databaseProvider).setSettingBool('notification_mirror', true);
                       }
                     } else {
                       await ref.read(notificationBridgeProvider).stopListening();
                       setState(() => _notificationMirror = false);
+                      await ref.read(databaseProvider).setSettingBool('notification_mirror', false);
                     }
                   },
                 ),
