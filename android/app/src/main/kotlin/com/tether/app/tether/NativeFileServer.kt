@@ -34,7 +34,28 @@ class NativeFileServer(private val context: Context) {
                 context.filesDir
             }
         }
-    @Volatile private var isRunning = false
+
+    private fun getUploadDirectory(): File {
+        // Fallback hierarchy:
+        // 1. Public Downloads directory
+        val publicDownloads = File("/storage/emulated/0/Download")
+        if (publicDownloads.exists() && publicDownloads.canWrite()) {
+            return publicDownloads
+        }
+        
+        // 2. App-specific external downloads directory (always writable without permissions)
+        val extDownloads = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+        if (extDownloads != null) {
+            if (!extDownloads.exists()) {
+                extDownloads.mkdirs()
+            }
+            return extDownloads
+        }
+        
+        // 3. App-specific internal files directory
+        return context.filesDir
+    }
+@Volatile private var isRunning = false
 
     /**
      * Start the HTTP server.
@@ -323,10 +344,13 @@ class NativeFileServer(private val context: Context) {
             val rawFilename = headerMap["x-filename"] ?: "upload_${System.currentTimeMillis()}"
             val filename = URLDecoder.decode(rawFilename, "UTF-8")
             
-            val downloadDir = File(sharedDirectory, "Download")
-            val targetDir = if (downloadDir.exists() && downloadDir.isDirectory) downloadDir else sharedDirectory
+            val targetDir = getUploadDirectory()
             val destFile = File(targetDir, filename)
-            if (!isSafeFile(destFile)) {
+            
+            // Path traversal protection: ensure the resolved path remains inside targetDir
+            val canonicalTarget = targetDir.canonicalPath
+            val canonicalDest = destFile.canonicalPath
+            if (!canonicalDest.startsWith(canonicalTarget)) {
                 val err = JSONObject().put("error", "Access denied")
                 sendJsonResponse(output, 403, "Forbidden", err)
                 return
