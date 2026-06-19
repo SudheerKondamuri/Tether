@@ -359,7 +359,7 @@ class NativeConnectionManager(
 
             // Handshake collision guard: if we're already connecting as client,
             // compare UUIDs. Lower ID yields.
-            if (state == ConnectionState.CONNECTING || state == ConnectionState.CONNECTED) {
+            if (state == ConnectionState.CONNECTING || (state == ConnectionState.CONNECTED && connectedDevice?.deviceId == peerDeviceId)) {
                 if (deviceId.compareTo(peerDeviceId) < 0) {
                     Log.i(TAG, "Handshake collision: my ID is lower, yielding server to peer")
                     socket.close()
