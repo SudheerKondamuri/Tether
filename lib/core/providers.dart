@@ -85,9 +85,11 @@ final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
     return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
         .asyncMap((_) async {
           try {
-            return await db.getSetting('connection_state');
+            final val = await db.getSetting('connection_state');
+            print('TETHER_POLL: connection_state = $val');
+            return val;
           } catch (e, stack) {
-            debugPrint('ERROR READING CONNECTION STATE FROM DB: $e\n$stack');
+            print('TETHER_POLL_ERROR: $e\n$stack');
             rethrow;
           }
         })
@@ -114,9 +116,11 @@ final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
     return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
         .asyncMap((_) async {
           try {
-            return await db.getSetting('connected_peer');
+            final val = await db.getSetting('connected_peer');
+            print('TETHER_POLL: connected_peer = $val');
+            return val;
           } catch (e, stack) {
-            debugPrint('ERROR READING CONNECTED PEER FROM DB: $e\n$stack');
+            print('TETHER_POLL_ERROR: $e\n$stack');
             rethrow;
           }
         })
