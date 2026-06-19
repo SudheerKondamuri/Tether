@@ -95,11 +95,11 @@ final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
   }
   
   if (PlatformUtils.isLinux) {
-    return ref.watch(daemonClientProvider).stateStream;
+    return ref.watch(daemonClientProvider).stateStream.distinct();
   }
 
   final manager = ref.watch(connectionManagerProvider);
-  return manager.stateStream;
+  return manager.stateStream.distinct();
 });
 
 final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
@@ -117,16 +117,33 @@ final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
     }).distinct((a, b) {
       if (a == null && b == null) return true;
       if (a == null || b == null) return false;
-      return a.deviceId == b.deviceId && a.ip == b.ip;
+      return a.deviceId == b.deviceId &&
+          a.ip == b.ip &&
+          a.battery == b.battery &&
+          a.wifiStrength == b.wifiStrength;
     });
   }
 
   if (PlatformUtils.isLinux) {
-    return ref.watch(daemonClientProvider).peerStream;
+    return ref.watch(daemonClientProvider).peerStream.distinct((a, b) {
+      if (a == null && b == null) return true;
+      if (a == null || b == null) return false;
+      return a.deviceId == b.deviceId &&
+          a.ip == b.ip &&
+          a.battery == b.battery &&
+          a.wifiStrength == b.wifiStrength;
+    });
   }
 
   final manager = ref.watch(connectionManagerProvider);
-  return manager.peerStream;
+  return manager.peerStream.distinct((a, b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    return a.deviceId == b.deviceId &&
+        a.ip == b.ip &&
+        a.battery == b.battery &&
+        a.wifiStrength == b.wifiStrength;
+  });
 });
 
 // ─── Clipboard Providers ───
@@ -222,16 +239,6 @@ final fileServiceProvider = Provider<FileService>((ref) {
   } else if (PlatformUtils.isAndroid) {
     service.getPeerOverride = () => ref.read(connectedDeviceProvider).valueOrNull;
   }
-  
-  getApplicationSupportDirectory().then((supportDir) {
-    service.serveDirOverride = PlatformUtils.isAndroid ? '/storage/emulated/0' : Platform.environment['HOME'];
-  });
-  
-  getDownloadsDirectory().then((downloadsDir) {
-    if (downloadsDir != null) {
-      service.downloadDirOverride = downloadsDir.path;
-    }
-  });
 
   ref.onDispose(() => service.dispose());
   return service;
