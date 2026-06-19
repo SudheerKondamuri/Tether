@@ -59,7 +59,7 @@ class FileService {
   }) : _connectionManager = connectionManager;
 
   /// Initialize and start local file server.
-  Future<void> start() async {
+  Future<void> start({bool startServer = true}) async {
     Directory downloadDir;
     Directory serveDir;
 
@@ -74,7 +74,7 @@ class FileService {
 
     _sharedDirectory = downloadDir.path;
 
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && startServer) {
       await _fileServer.start(
         sharedDirectory: serveDir.path,
         port: TetherConstants.httpFilePort,
