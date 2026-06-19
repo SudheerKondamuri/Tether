@@ -64,10 +64,24 @@ class _TetherAppState extends ConsumerState<TetherApp> {
     if (PlatformUtils.isAndroid) {
       // On Android, request permissions first
       await Permission.notification.request();
-      await Permission.manageExternalStorage.request();
+      final storageStatus = await Permission.manageExternalStorage.request();
+      
+      final service = ref.read(fileServiceProvider);
+      if (storageStatus.isGranted) {
+        service.downloadDirOverride = '/storage/emulated/0/Download';
+        service.serveDirOverride = '/storage/emulated/0';
+      } else {
+        // Fallback to app's external files directory if MANAGE_EXTERNAL_STORAGE is denied
+        final extDir = await getExternalStorageDirectory();
+        if (extDir != null) {
+          service.downloadDirOverride = p.join(extDir.path, 'Download');
+          service.serveDirOverride = extDir.path;
+          await Directory(service.downloadDirOverride!).create(recursive: true);
+        }
+      }
       
       // Initialize file service so local shared directory is correctly resolved
-      await ref.read(fileServiceProvider).start();
+      await service.start();
       return;
     }
 
@@ -75,6 +89,13 @@ class _TetherAppState extends ConsumerState<TetherApp> {
       // On Linux, all core services are run by the background daemon (tetherd).
       // The GUI simply initializes the DaemonClient UDS socket bridge.
       ref.read(daemonClientProvider);
+      
+      // Initialize file service for the GUI client to resolve correct downloads directory, but do not start server
+      final service = ref.read(fileServiceProvider);
+      final homePath = Platform.environment['HOME'] ?? '/tmp';
+      service.downloadDirOverride = p.join(homePath, 'Downloads');
+      service.serveDirOverride = homePath;
+      await service.start(startServer: false);
       return;
     }
 
@@ -93,6 +114,10 @@ class _TetherAppState extends ConsumerState<TetherApp> {
 
     // Start file serving
     final fileService = ref.read(fileServiceProvider);
+    final homePath = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '/tmp';
+    final downloadsDir = await getDownloadsDirectory();
+    fileService.downloadDirOverride = downloadsDir?.path ?? p.join(homePath, 'Downloads');
+    fileService.serveDirOverride = homePath;
     await fileService.start();
 
     // Start mDNS broadcast and discovery
