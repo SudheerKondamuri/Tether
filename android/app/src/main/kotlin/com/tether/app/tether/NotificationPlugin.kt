@@ -89,12 +89,16 @@ class NotificationPlugin : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (!isListening) return
+        val context = applicationContext
+        val db = TetherDatabase.getInstance(context)
+        val mirrorSetting = db.getSetting("notification_mirror")
+        val mirrorEnabled = mirrorSetting == null || mirrorSetting == "true"
+        if (!mirrorEnabled) return
 
         val notification = sbn.notification ?: return
         val extras = notification.extras ?: return
         val appName = try {
-            val pm = applicationContext.packageManager
+            val pm = context.packageManager
             pm.getApplicationLabel(
                 pm.getApplicationInfo(sbn.packageName, 0)
             ).toString()
@@ -109,7 +113,7 @@ class NotificationPlugin : NotificationListenerService() {
 
         // Get app icon as base64
         val iconBase64 = try {
-            val pm = applicationContext.packageManager
+            val pm = context.packageManager
             val icon = pm.getApplicationIcon(sbn.packageName)
             bitmapToBase64(drawableToBitmap(icon))
         } catch (_: Exception) {
@@ -125,7 +129,21 @@ class NotificationPlugin : NotificationListenerService() {
             "timestamp" to sbn.postTime,
         )
 
-        channel?.invokeMethod("onNotificationPosted", data)
+        if (isListening) {
+            channel?.invokeMethod("onNotificationPosted", data)
+        }
+
+        val connectionManager = ForegroundServicePlugin.getConnectionManager()
+        if (connectionManager != null && connectionManager.getConnectionState() == "connected") {
+            val payload = NotificationPayload(
+                app = appName,
+                packageName = sbn.packageName,
+                title = title,
+                text = body,
+                iconB64 = iconBase64
+            )
+            connectionManager.sendNotification(payload)
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
