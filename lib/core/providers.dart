@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/core/database/app_database.dart';
@@ -82,7 +83,14 @@ final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
   if (PlatformUtils.isAndroid) {
     final db = ref.watch(databaseProvider);
     return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
-        .asyncMap((_) => db.getSetting('connection_state'))
+        .asyncMap((_) async {
+          try {
+            return await db.getSetting('connection_state');
+          } catch (e, stack) {
+            debugPrint('ERROR READING CONNECTION STATE FROM DB: $e\n$stack');
+            rethrow;
+          }
+        })
         .map((val) {
       if (val == null) return TetherConnectionState.disconnected;
       return TetherConnectionState.values.firstWhere(
@@ -104,7 +112,14 @@ final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
   if (PlatformUtils.isAndroid) {
     final db = ref.watch(databaseProvider);
     return Stream.periodic(const Duration(milliseconds: 500), (i) => i)
-        .asyncMap((_) => db.getSetting('connected_peer'))
+        .asyncMap((_) async {
+          try {
+            return await db.getSetting('connected_peer');
+          } catch (e, stack) {
+            debugPrint('ERROR READING CONNECTED PEER FROM DB: $e\n$stack');
+            rethrow;
+          }
+        })
         .map((val) {
       if (val == null || val.isEmpty) return null;
       try {
