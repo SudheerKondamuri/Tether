@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:tether/core/database/app_database.dart';
@@ -141,10 +142,10 @@ class NotificationBridgeService {
   void _handleNotification(Packet packet) {
     final payload = packet.payload;
     final notif = TetherNotification(
-      appName: payload['app_name'] as String? ?? 'Unknown',
+      appName: payload['app_name'] as String? ?? payload['app'] as String? ?? 'Unknown',
       title: payload['title'] as String? ?? '',
-      body: payload['body'] as String? ?? '',
-      iconBase64: payload['icon'] as String?,
+      body: payload['body'] as String? ?? payload['text'] as String? ?? '',
+      iconBase64: payload['icon'] as String? ?? payload['icon_b64'] as String?,
     );
 
     _notifications.insert(0, notif);
@@ -165,6 +166,63 @@ class NotificationBridgeService {
       iconB64: Value(notif.iconBase64),
       timestamp: Value(notif.timestamp),
     ));
+
+    // Show native Linux desktop notification
+    _showNativeNotification(
+      appName: notif.appName,
+      title: notif.title,
+      body: notif.body,
+      iconB64: notif.iconBase64,
+    );
+  }
+
+  Future<void> _showNativeNotification({
+    required String appName,
+    required String title,
+    required String body,
+    String? iconB64,
+  }) async {
+    if (!Platform.isLinux) return;
+
+    final args = <String>[];
+    args.add('-a');
+    args.add(appName);
+
+    File? tempIconFile;
+    if (iconB64 != null && iconB64.isNotEmpty) {
+      try {
+        final decoded = base64Decode(iconB64);
+        final tempDir = Directory.systemTemp;
+        tempIconFile = File('${tempDir.path}/tether_notif_${DateTime.now().microsecondsSinceEpoch}.png');
+        await tempIconFile.writeAsBytes(decoded);
+        args.add('-i');
+        args.add(tempIconFile.path);
+      } catch (_) {
+        // Ignore icon decoding failures
+      }
+    }
+
+    args.add(title);
+    if (body.isNotEmpty) {
+      args.add(body);
+    }
+
+    try {
+      await Process.run('notify-send', args);
+    } catch (_) {
+      // notify-send might not be installed
+    } finally {
+      // Clean up the temp icon file after a short delay
+      if (tempIconFile != null) {
+        Future.delayed(const Duration(seconds: 5), () async {
+          try {
+            if (await tempIconFile!.exists()) {
+              await tempIconFile.delete();
+            }
+          } catch (_) {}
+        });
+      }
+    }
   }
 
   /// Mark a notification as read.
