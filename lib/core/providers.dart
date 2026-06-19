@@ -56,22 +56,28 @@ final discoveredDevicesProvider = StreamProvider<List<DiscoveredDevice>>((ref) {
 // ─── Connection Manager Providers ───
 
 final connectionManagerProvider = Provider<ConnectionManager>((ref) {
-  final db = ref.read(databaseProvider);
-  final mdns = ref.read(mdnsDiscoveryProvider);
+  final db = ref.watch(databaseProvider);
+  final mdns = ref.watch(mdnsDiscoveryProvider);
   final manager = ConnectionManager(db: db, mdns: mdns);
   
   if (PlatformUtils.isAndroid) {
     manager.androidConnectTo = (host, port) async {
-      await const MethodChannel(TetherConstants.foregroundServiceChannel)
-          .invokeMethod('connectTo', {
-        'host': host,
-        'port': port,
-      });
-      return true;
+      try {
+        await const MethodChannel(TetherConstants.foregroundServiceChannel)
+            .invokeMethod('connectTo', {
+          'host': host,
+          'port': port,
+        });
+        return true;
+      } catch (e) {
+        return false;
+      }
     };
     manager.androidDisconnect = () async {
-      await const MethodChannel(TetherConstants.foregroundServiceChannel)
-          .invokeMethod('disconnect');
+      try {
+        await const MethodChannel(TetherConstants.foregroundServiceChannel)
+            .invokeMethod('disconnect');
+      } catch (e) {}
     };
   }
 
