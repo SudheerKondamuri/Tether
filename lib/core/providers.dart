@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:tether/core/database/app_database.dart';
 import 'package:tether/core/database/database_provider.dart';
 import 'package:tether/core/networking/connection_manager.dart';
