@@ -175,8 +175,11 @@ class DaemonClient {
     // 2. Try searching upwards from resolved executable to find project root (development/debug mode)
     var dir = Directory(parentDir.path);
     while (true) {
-      // Check for compiled CLI bundle in build directory
-      final devFile = File(p.join(dir.path, 'build', 'cli', 'bundle', 'bin', 'tetherd'));
+      // Check for compiled CLI bundle in build directory (either under arch folder or legacy folder)
+      File devFile = File(p.join(dir.path, 'build', 'cli', 'linux_x64', 'bundle', 'bin', 'tetherd'));
+      if (!await devFile.exists()) {
+        devFile = File(p.join(dir.path, 'build', 'cli', 'bundle', 'bin', 'tetherd'));
+      }
       if (await devFile.exists()) {
         await Process.start(
           devFile.path,
