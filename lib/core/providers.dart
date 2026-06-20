@@ -109,7 +109,15 @@ final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
   }
   
   if (PlatformUtils.isLinux) {
-    return ref.watch(daemonClientProvider).stateStream.distinct();
+    final client = ref.watch(daemonClientProvider);
+    final controller = StreamController<TetherConnectionState>();
+    controller.add(client.state);
+    final sub = client.stateStream.listen((val) => controller.add(val));
+    ref.onDispose(() {
+      sub.cancel();
+      controller.close();
+    });
+    return controller.stream.distinct();
   }
 
   final manager = ref.watch(connectionManagerProvider);
@@ -148,7 +156,15 @@ final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
   }
 
   if (PlatformUtils.isLinux) {
-    return ref.watch(daemonClientProvider).peerStream.distinct((a, b) {
+    final client = ref.watch(daemonClientProvider);
+    final controller = StreamController<ConnectedDevice?>();
+    controller.add(client.peer);
+    final sub = client.peerStream.listen((val) => controller.add(val));
+    ref.onDispose(() {
+      sub.cancel();
+      controller.close();
+    });
+    return controller.stream.distinct((a, b) {
       if (a == null && b == null) return true;
       if (a == null || b == null) return false;
       return a.deviceId == b.deviceId &&
