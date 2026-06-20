@@ -77,9 +77,10 @@ class TetherDatabase private constructor(context: Context) {
     private fun openDatabase(context: Context): SQLiteDatabase? {
         try {
             // path_provider's getApplicationDocumentsDirectory() on Android
-            // resolves to <dataDir>/app_flutter
-            val appFlutterDir = File(context.applicationInfo.dataDir, "app_flutter")
-            val dbFile = File(appFlutterDir, DB_NAME)
+            // resolves to <dataDir>/app_flutter. We resolve canonicalFile to avoid
+            // symlink mismatch issues with FFI sqlite3.
+            val appFlutterDir = File(context.applicationInfo.dataDir, "app_flutter").canonicalFile
+            val dbFile = File(appFlutterDir, DB_NAME).canonicalFile
 
             if (!dbFile.exists()) {
                 Log.w(TAG, "Database file does not exist yet: ${dbFile.absolutePath}")
@@ -98,6 +99,7 @@ class TetherDatabase private constructor(context: Context) {
                 SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING
             )
             database.execSQL("PRAGMA synchronous=NORMAL")
+            database.execSQL("PRAGMA busy_timeout = 5000")
             Log.i(TAG, "Opened database at ${dbFile.absolutePath}")
             return database
         } catch (e: Exception) {
@@ -107,10 +109,12 @@ class TetherDatabase private constructor(context: Context) {
     }
 
     private fun createMinimalDatabase(dbFile: File): SQLiteDatabase? {
+        val canonicalDbFile = dbFile.canonicalFile
         return try {
-            val database = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+            val database = SQLiteDatabase.openOrCreateDatabase(canonicalDbFile, null)
             database.execSQL("PRAGMA journal_mode=WAL")
             database.execSQL("PRAGMA synchronous=NORMAL")
+            database.execSQL("PRAGMA busy_timeout = 5000")
 
             database.execSQL(
                 """
