@@ -193,8 +193,9 @@ class DaemonClient {
       // Check for source file in project root
       final devSrc = File(p.join(dir.path, 'bin', 'tetherd.dart'));
       if (await devSrc.exists()) {
+        final dartExecutable = await _findDartExecutable();
         await Process.start(
-          'dart',
+          dartExecutable,
           ['run', 'bin/tetherd.dart'],
           mode: ProcessStartMode.detached,
           workingDirectory: dir.path,
@@ -218,11 +219,29 @@ class DaemonClient {
 
     final devPath = File('bin/tetherd.dart');
     if (await devPath.exists()) {
-      await Process.start('dart', ['run', 'bin/tetherd.dart'], mode: ProcessStartMode.detached);
+      final dartExecutable = await _findDartExecutable();
+      await Process.start(dartExecutable, ['run', 'bin/tetherd.dart'], mode: ProcessStartMode.detached);
       return;
     }
 
     throw StateError('Cannot locate tetherd executable or source code to spawn daemon.');
+  }
+
+  Future<String> _findDartExecutable() async {
+    final home = Platform.environment['HOME'] ?? '';
+    final possiblePaths = [
+      p.join(home, 'flutter', 'bin', 'dart'),
+      p.join(home, 'development', 'flutter', 'bin', 'dart'),
+      p.join(home, 'Developer', 'flutter', 'bin', 'dart'),
+      p.join(home, 'sdks', 'flutter', 'bin', 'dart'),
+      p.join(home, '.flutter', 'bin', 'dart'),
+    ];
+    for (final path in possiblePaths) {
+      if (await File(path).exists()) {
+        return path;
+      }
+    }
+    return 'dart'; // fallback to PATH
   }
 
   void dispose() {
