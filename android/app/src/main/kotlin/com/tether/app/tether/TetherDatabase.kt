@@ -112,7 +112,7 @@ class TetherDatabase private constructor(context: Context) {
         val canonicalDbFile = dbFile.canonicalFile
         return try {
             val database = SQLiteDatabase.openOrCreateDatabase(canonicalDbFile, null)
-            database.execSQL("PRAGMA journal_mode=WAL")
+            database.enableWriteAheadLogging()
             database.execSQL("PRAGMA synchronous=NORMAL")
             database.execSQL("PRAGMA busy_timeout = 5000")
 
