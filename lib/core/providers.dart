@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tether/core/database/app_database.dart';
@@ -76,7 +77,9 @@ final connectionManagerProvider = Provider<ConnectionManager>((ref) {
       try {
         await const MethodChannel(TetherConstants.foregroundServiceChannel)
             .invokeMethod('disconnect');
-      } catch (e) {}
+      } catch (e) {
+        // ignore: empty_catches
+      }
     };
   }
 
@@ -91,10 +94,10 @@ final connectionStateProvider = StreamProvider<TetherConnectionState>((ref) {
         .asyncMap((_) async {
           try {
             final val = await db.getSetting('connection_state');
-            print('TETHER_POLL: connection_state = $val');
+            debugPrint('TETHER_POLL: connection_state = $val');
             return val;
           } catch (e, stack) {
-            print('TETHER_POLL_ERROR: $e\n$stack');
+            debugPrint('TETHER_POLL_ERROR: $e\n$stack');
             rethrow;
           }
         })
@@ -130,10 +133,10 @@ final connectedDeviceProvider = StreamProvider<ConnectedDevice?>((ref) {
         .asyncMap((_) async {
           try {
             final val = await db.getSetting('connected_peer');
-            print('TETHER_POLL: connected_peer = $val');
+            debugPrint('TETHER_POLL: connected_peer = $val');
             return val;
           } catch (e, stack) {
-            print('TETHER_POLL_ERROR: $e\n$stack');
+            debugPrint('TETHER_POLL_ERROR: $e\n$stack');
             rethrow;
           }
         })
