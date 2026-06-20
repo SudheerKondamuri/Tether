@@ -29,7 +29,12 @@ void main() async {
     // Resolve data directories via path_provider (only place that imports it).
     final docsDir = await getApplicationDocumentsDirectory();
     final supportDir = await getApplicationSupportDirectory();
-    AppDatabase.dbPathOverride = p.join(docsDir.path, TetherConstants.databaseName);
+    
+    // Resolve symlinks for the database directory path to align with Android native canonical path
+    await Directory(docsDir.path).create(recursive: true);
+    final canonicalDocsPath = Directory(docsDir.path).resolveSymbolicLinksSync();
+    
+    AppDatabase.dbPathOverride = p.join(canonicalDocsPath, TetherConstants.databaseName);
     TlsManager.certDirOverride = p.join(supportDir.path, 'certs');
   }
 
@@ -65,6 +70,10 @@ class _TetherAppState extends ConsumerState<TetherApp> {
       // On Android, request permissions first
       await Permission.notification.request();
       final storageStatus = await Permission.manageExternalStorage.request();
+      
+      // Initialize ConnectionManager so Android peer sync starts
+      final connectionManager = ref.read(connectionManagerProvider);
+      await connectionManager.init();
       
       final service = ref.read(fileServiceProvider);
       if (storageStatus.isGranted) {
