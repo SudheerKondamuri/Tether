@@ -228,19 +228,50 @@ class DaemonClient {
   }
 
   Future<String> _findDartExecutable() async {
+    // 1. Inspect the system PATH environment variable for 'dart' or 'flutter'
+    final pathEnv = Platform.environment['PATH'] ?? '';
+    for (final dir in pathEnv.split(':')) {
+      if (dir.isEmpty) continue;
+      
+      final dartFile = File(p.join(dir, 'dart'));
+      if (await dartFile.exists()) {
+        return dartFile.path;
+      }
+      
+      final flutterFile = File(p.join(dir, 'flutter'));
+      if (await flutterFile.exists()) {
+        final parent = p.dirname(flutterFile.path); // e.g. /home/omni/flutter/bin
+        final bundledDart = File(p.join(parent, 'cache', 'dart-sdk', 'bin', 'dart'));
+        if (await bundledDart.exists()) {
+          return bundledDart.path;
+        }
+        final adjacentDart = File(p.join(parent, 'dart'));
+        if (await adjacentDart.exists()) {
+          return adjacentDart.path;
+        }
+      }
+    }
+
+    // 2. Scan standard home directory fallback locations (including bundled SDKs)
     final home = Platform.environment['HOME'] ?? '';
     final possiblePaths = [
       p.join(home, 'flutter', 'bin', 'dart'),
+      p.join(home, 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
       p.join(home, 'development', 'flutter', 'bin', 'dart'),
+      p.join(home, 'development', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
       p.join(home, 'Developer', 'flutter', 'bin', 'dart'),
+      p.join(home, 'Developer', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
       p.join(home, 'sdks', 'flutter', 'bin', 'dart'),
+      p.join(home, 'sdks', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
       p.join(home, '.flutter', 'bin', 'dart'),
+      p.join(home, '.flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
     ];
     for (final path in possiblePaths) {
       if (await File(path).exists()) {
         return path;
       }
     }
+
     return 'dart'; // fallback to PATH
   }
 
