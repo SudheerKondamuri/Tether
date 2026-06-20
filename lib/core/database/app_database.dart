@@ -30,6 +30,7 @@ class AppDatabase extends _$AppDatabase {
           setup: (rawDb) {
             rawDb.execute('PRAGMA journal_mode=WAL;');
             rawDb.execute('PRAGMA synchronous=NORMAL;');
+            rawDb.execute('PRAGMA busy_timeout=5000;');
           },
         ));
 
@@ -222,6 +223,7 @@ LazyDatabase _openConnection() {
       setup: (rawDb) {
         rawDb.execute('PRAGMA journal_mode=WAL;');
         rawDb.execute('PRAGMA synchronous=NORMAL;');
+        rawDb.execute('PRAGMA busy_timeout=5000;');
       },
     );
   });
