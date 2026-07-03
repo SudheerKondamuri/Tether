@@ -98,8 +98,8 @@ class TetherDatabase private constructor(context: Context) {
                 null,
                 SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING
             )
-            database.execSQL("PRAGMA synchronous=NORMAL")
-            database.execSQL("PRAGMA busy_timeout = 5000")
+            database.rawQuery("PRAGMA synchronous=NORMAL", null)?.close()
+            database.rawQuery("PRAGMA busy_timeout = 5000", null)?.close()
             Log.i(TAG, "Opened database at ${dbFile.absolutePath}")
             return database
         } catch (e: Exception) {
@@ -113,8 +113,8 @@ class TetherDatabase private constructor(context: Context) {
         return try {
             val database = SQLiteDatabase.openOrCreateDatabase(canonicalDbFile, null)
             database.enableWriteAheadLogging()
-            database.execSQL("PRAGMA synchronous=NORMAL")
-            database.execSQL("PRAGMA busy_timeout = 5000")
+            database.rawQuery("PRAGMA synchronous=NORMAL", null)?.close()
+            database.rawQuery("PRAGMA busy_timeout = 5000", null)?.close()
 
             database.execSQL(
                 """
