@@ -2,8 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' hide InternetAddress, InternetAddressType;
-import 'package:tether/shared/windows_ipc_compat.dart';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:tether/core/networking/connection_manager.dart';
@@ -49,7 +48,7 @@ class DaemonClient {
       try {
         if (Platform.isWindows) {
           _socket = await Socket.connect(
-            InternetAddress(r'\\.\pipe\tetherd.pipe', type: InternetAddressType.pipe),
+            InternetAddress(r'\\.\pipe\tetherd.pipe', type: InternetAddressType.unix),
             0,
           );
         } else {
