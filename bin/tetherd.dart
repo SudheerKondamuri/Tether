@@ -2,8 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' hide InternetAddress, InternetAddressType;
-import 'package:tether/shared/windows_ipc_compat.dart';
+import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:tether/core/database/app_database.dart';
 import 'package:tether/core/database/database_provider.dart';
@@ -69,7 +68,7 @@ void main() async {
         }
       }
     }
-    await lockFile.writeAsString('$pid');
+    await lockFile.writeAsString('${Process.pid}');
   } catch (e) {
     print('Warning: lock file check failed: $e');
   }
@@ -130,7 +129,7 @@ void main() async {
     // to check and handle socket binding cleanly.
     try {
       ipcServer = await ServerSocket.bind(
-        InternetAddress(r'\\.\pipe\tetherd.pipe', type: InternetAddressType.pipe),
+        InternetAddress(r'\\.\pipe\tetherd.pipe', type: InternetAddressType.unix),
         0,
       );
       print('IPC Named Pipe server listening on \\\\.\\pipe\\tetherd.pipe');
