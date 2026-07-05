@@ -68,7 +68,7 @@ void main() async {
         }
       }
     }
-    await lockFile.writeAsString('${Process.pid}');
+    await lockFile.writeAsString('$pid');
   } catch (e) {
     print('Warning: lock file check failed: $e');
   }
