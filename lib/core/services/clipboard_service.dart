@@ -77,9 +77,12 @@ class ClipboardService {
         androidStartListening!(_onLocalClipboardChanged);
       }
     } else {
-      // Poll system clipboard for Linux/non-Android
+      // Poll system clipboard for Windows/Linux/non-Android
+      final pollInterval = Platform.isWindows
+          ? const Duration(milliseconds: 2000)
+          : TetherConstants.clipboardPollInterval;
       _pollTimer = Timer.periodic(
-        TetherConstants.clipboardPollInterval,
+        pollInterval,
         (_) => _checkClipboard(),
       );
     }
@@ -98,12 +101,12 @@ class ClipboardService {
     }
   }
 
-  /// Check system clipboard for changes (Linux fallback).
+  /// Check system clipboard for changes.
   Future<void> _checkClipboard() async {
     try {
       final text = platformGetClipboard != null
           ? await platformGetClipboard!()
-          : await _readLinuxClipboard();
+          : (Platform.isWindows ? await _readWindowsClipboard() : await _readLinuxClipboard());
       await _onLocalClipboardChanged(text);
     } catch (_) {
       // Clipboard access may fail on some platforms
@@ -156,6 +159,8 @@ class ClipboardService {
     _lastClipboard = text;
     if (platformSetClipboard != null) {
       await platformSetClipboard!(text);
+    } else if (Platform.isWindows) {
+      await _writeWindowsClipboard(text);
     } else if (Platform.isLinux) {
       await _writeLinuxClipboard(text);
     }
@@ -219,6 +224,8 @@ class ClipboardService {
     _lastClipboard = entry.content;
     if (platformSetClipboard != null) {
       await platformSetClipboard!(entry.content);
+    } else if (Platform.isWindows) {
+      await _writeWindowsClipboard(entry.content);
     } else if (Platform.isLinux) {
       await _writeLinuxClipboard(entry.content);
     }
@@ -282,8 +289,32 @@ class ClipboardService {
     try {
       final proc = await Process.start('xsel', ['-i', '-b']);
       proc.stdin.write(text);
-      await proc.stdin.close();
+      proc.stdin.close();
       await proc.exitCode;
+    } catch (_) {}
+  }
+
+  /// Read clipboard from Windows using PowerShell (pure Dart fallback).
+  Future<String> _readWindowsClipboard() async {
+    try {
+      final res = await Process.run('powershell', ['-NoProfile', '-Command', 'Get-Clipboard']);
+      if (res.exitCode == 0) {
+        final String raw = res.stdout as String;
+        return raw.replaceAll('\r\n', '\n').replaceAll('\r', '').trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  /// Write clipboard to Windows using PowerShell (pure Dart fallback).
+  Future<void> _writeWindowsClipboard(String text) async {
+    try {
+      final escaped = text.replaceAll('"', '`"').replaceAll(r'$', r'`$');
+      await Process.run('powershell', [
+        '-NoProfile',
+        '-Command',
+        'Set-Clipboard -Value "$escaped"',
+      ]);
     } catch (_) {}
   }
 }
