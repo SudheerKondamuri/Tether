@@ -2,7 +2,8 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' hide InternetAddress, InternetAddressType;
+import 'package:tether/shared/windows_ipc_compat.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:tether/core/networking/connection_manager.dart';
@@ -34,7 +35,7 @@ class DaemonClient {
   bool get isConnected => _state == TetherConnectionState.connected;
 
   DaemonClient() {
-    if (PlatformUtils.isLinux) {
+    if (PlatformUtils.isLinux || PlatformUtils.isWindows) {
       _connectWithRetry();
     }
   }
@@ -46,7 +47,14 @@ class DaemonClient {
     int attempts = 0;
     while (_socket == null && _isConnecting) {
       try {
-        _socket = await Socket.connect(InternetAddress(_socketPath, type: InternetAddressType.unix), 0);
+        if (Platform.isWindows) {
+          _socket = await Socket.connect(
+            InternetAddress(r'\\.\pipe\tetherd.pipe', type: InternetAddressType.pipe),
+            0,
+          );
+        } else {
+          _socket = await Socket.connect(InternetAddress(_socketPath, type: InternetAddressType.unix), 0);
+        }
         _isConnecting = false;
         _handleSocketConnection(_socket!);
         break;
@@ -163,10 +171,24 @@ class DaemonClient {
   }
 
   Future<void> _spawnDaemon() async {
+    final binaryName = Platform.isWindows ? 'tetherd.exe' : 'tetherd';
     // 1. Try adjacent to resolved executable path (production release bundle)
     final resolvedPath = Platform.resolvedExecutable;
     final parentDir = Directory(p.dirname(resolvedPath));
-    final adjacentExec = File(p.join(parentDir.path, 'tetherd'));
+
+    // Try standard CLI bundle layout: bin/tetherd (allows resolving ../lib/ shared libraries)
+    final bundledExec = File(p.join(parentDir.path, 'bin', binaryName));
+    if (await bundledExec.exists()) {
+      await Process.start(
+        bundledExec.path,
+        [],
+        mode: ProcessStartMode.detached,
+        workingDirectory: bundledExec.parent.path,
+      );
+      return;
+    }
+
+    final adjacentExec = File(p.join(parentDir.path, binaryName));
     if (await adjacentExec.exists()) {
       await Process.start(adjacentExec.path, [], mode: ProcessStartMode.detached);
       return;
@@ -175,19 +197,30 @@ class DaemonClient {
     // 2. Try searching upwards from resolved executable to find project root (development/debug mode)
     var dir = Directory(parentDir.path);
     while (true) {
-      // Check for compiled CLI bundle in build directory (either under arch folder or legacy folder)
-      File devFile = File(p.join(dir.path, 'build', 'cli', 'linux_x64', 'bundle', 'bin', 'tetherd'));
-      if (!await devFile.exists()) {
-        devFile = File(p.join(dir.path, 'build', 'cli', 'bundle', 'bin', 'tetherd'));
-      }
-      if (await devFile.exists()) {
-        await Process.start(
-          devFile.path,
-          [],
-          mode: ProcessStartMode.detached,
-          workingDirectory: p.dirname(devFile.path),
-        );
-        return;
+      // Check for compiled CLI bundle in build directory
+      final List<String> relativePaths = Platform.isWindows
+          ? [
+              p.join('build', 'windows', 'x64', 'runner', 'Release', 'tetherd.exe'),
+              p.join('build', 'windows', 'runner', 'Release', 'tetherd.exe'),
+              p.join('build', 'cli', 'windows_x64', 'bundle', 'bin', 'tetherd.exe'),
+              p.join('build', 'cli', 'bundle', 'bin', 'tetherd.exe'),
+            ]
+          : [
+              p.join('build', 'cli', 'linux_x64', 'bundle', 'bin', 'tetherd'),
+              p.join('build', 'cli', 'bundle', 'bin', 'tetherd'),
+            ];
+
+      for (final relPath in relativePaths) {
+        final devFile = File(p.join(dir.path, relPath));
+        if (await devFile.exists()) {
+          await Process.start(
+            devFile.path,
+            [],
+            mode: ProcessStartMode.detached,
+            workingDirectory: p.dirname(devFile.path),
+          );
+          return;
+        }
       }
 
       // Check for source file in project root
@@ -210,10 +243,10 @@ class DaemonClient {
       dir = parent;
     }
 
-    // 3. Last resort fallback to current directory ./tetherd or bin/tetherd.dart
-    final localExec = File('./tetherd');
+    // 3. Last resort fallback to current directory
+    final localExec = File(Platform.isWindows ? './tetherd.exe' : './tetherd');
     if (await localExec.exists()) {
-      await Process.start('./tetherd', [], mode: ProcessStartMode.detached);
+      await Process.start(localExec.path, [], mode: ProcessStartMode.detached);
       return;
     }
 
@@ -228,24 +261,28 @@ class DaemonClient {
   }
 
   Future<String> _findDartExecutable() async {
+    final separator = Platform.isWindows ? ';' : ':';
+    final dartName = Platform.isWindows ? 'dart.exe' : 'dart';
+    final flutterName = Platform.isWindows ? 'flutter.bat' : 'flutter';
+
     // 1. Inspect the system PATH environment variable for 'dart' or 'flutter'
     final pathEnv = Platform.environment['PATH'] ?? '';
-    for (final dir in pathEnv.split(':')) {
+    for (final dir in pathEnv.split(separator)) {
       if (dir.isEmpty) continue;
       
-      final dartFile = File(p.join(dir, 'dart'));
+      final dartFile = File(p.join(dir, dartName));
       if (await dartFile.exists()) {
         return dartFile.path;
       }
       
-      final flutterFile = File(p.join(dir, 'flutter'));
+      final flutterFile = File(p.join(dir, flutterName));
       if (await flutterFile.exists()) {
         final parent = p.dirname(flutterFile.path); // e.g. /home/omni/flutter/bin
-        final bundledDart = File(p.join(parent, 'cache', 'dart-sdk', 'bin', 'dart'));
+        final bundledDart = File(p.join(parent, 'cache', 'dart-sdk', 'bin', dartName));
         if (await bundledDart.exists()) {
           return bundledDart.path;
         }
-        final adjacentDart = File(p.join(parent, 'dart'));
+        final adjacentDart = File(p.join(parent, dartName));
         if (await adjacentDart.exists()) {
           return adjacentDart.path;
         }
@@ -253,19 +290,28 @@ class DaemonClient {
     }
 
     // 2. Scan standard home directory fallback locations (including bundled SDKs)
-    final home = Platform.environment['HOME'] ?? '';
-    final possiblePaths = [
-      p.join(home, 'flutter', 'bin', 'dart'),
-      p.join(home, 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
-      p.join(home, 'development', 'flutter', 'bin', 'dart'),
-      p.join(home, 'development', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
-      p.join(home, 'Developer', 'flutter', 'bin', 'dart'),
-      p.join(home, 'Developer', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
-      p.join(home, 'sdks', 'flutter', 'bin', 'dart'),
-      p.join(home, 'sdks', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
-      p.join(home, '.flutter', 'bin', 'dart'),
-      p.join(home, '.flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
-    ];
+    final home = Platform.isWindows
+        ? Platform.environment['USERPROFILE'] ?? Platform.environment['APPDATA'] ?? 'C:\\'
+        : Platform.environment['HOME'] ?? '';
+    final possiblePaths = Platform.isWindows
+        ? [
+            p.join(home, 'flutter', 'bin', dartName),
+            p.join(home, 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', dartName),
+            p.join(home, 'development', 'flutter', 'bin', dartName),
+            p.join(home, 'development', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', dartName),
+          ]
+        : [
+            p.join(home, 'flutter', 'bin', 'dart'),
+            p.join(home, 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
+            p.join(home, 'development', 'flutter', 'bin', 'dart'),
+            p.join(home, 'development', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
+            p.join(home, 'Developer', 'flutter', 'bin', 'dart'),
+            p.join(home, 'Developer', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
+            p.join(home, 'sdks', 'flutter', 'bin', 'dart'),
+            p.join(home, 'sdks', 'flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
+            p.join(home, '.flutter', 'bin', 'dart'),
+            p.join(home, '.flutter', 'bin', 'cache', 'dart-sdk', 'bin', 'dart'),
+          ];
     for (final path in possiblePaths) {
       if (await File(path).exists()) {
         return path;
