@@ -2,7 +2,8 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' hide InternetAddress, InternetAddressType;
+import 'package:tether/shared/windows_ipc_compat.dart';
 import 'package:path/path.dart' as p;
 import 'package:tether/core/database/app_database.dart';
 import 'package:tether/core/database/database_provider.dart';
@@ -17,6 +18,14 @@ import 'package:tether/shared/constants.dart';
 const String socketPath = '/tmp/tetherd.sock';
 const String lockPath = '/tmp/tetherd.lock';
 
+String getLockPath() {
+  if (Platform.isWindows) {
+    final tempDir = Directory.systemTemp.path;
+    return p.join(tempDir, 'tetherd.lock');
+  }
+  return lockPath;
+}
+
 late final AppDatabase db;
 late final MdnsDiscovery mdns;
 late final ConnectionManager connectionManager;
@@ -28,22 +37,33 @@ ServerSocket? ipcServer;
 final Set<Socket> activeConnections = {};
 
 void main() async {
-  // Ensure we are running on Linux
-  if (!Platform.isLinux) {
-    print('Error: tetherd is only supported on Linux.');
+  // Ensure we are running on Linux or Windows
+  if (!Platform.isLinux && !Platform.isWindows) {
+    print('Error: tetherd is only supported on Linux and Windows.');
     exit(1);
   }
 
   // Check single instance lock
-  final lockFile = File(lockPath);
+  final lockFile = File(getLockPath());
   try {
     if (await lockFile.exists()) {
       // Check if process is actually running
       final pidStr = await lockFile.readAsString();
       final pid = int.tryParse(pidStr.trim());
       if (pid != null) {
-        final results = await Process.run('ps', ['-p', '$pid']);
-        if (results.exitCode == 0) {
+        bool isRunning = false;
+        if (Platform.isWindows) {
+          final results = await Process.run('tasklist', ['/FI', 'PID eq $pid']);
+          if (results.exitCode == 0 && (results.stdout as String).contains('$pid')) {
+            isRunning = true;
+          }
+        } else {
+          final results = await Process.run('ps', ['-p', '$pid']);
+          if (results.exitCode == 0) {
+            isRunning = true;
+          }
+        }
+        if (isRunning) {
           print('tetherd is already running with PID $pid.');
           exit(0);
         }
@@ -57,7 +77,9 @@ void main() async {
   print('Starting tetherd daemon...');
 
   // Setup directories
-  final home = Platform.environment['HOME'] ?? '/tmp';
+  final home = Platform.isWindows
+      ? Platform.environment['USERPROFILE'] ?? Platform.environment['APPDATA'] ?? 'C:\\'
+      : Platform.environment['HOME'] ?? '/tmp';
   final configDir = p.join(home, '.config', 'tether');
   await Directory(configDir).create(recursive: true);
 
@@ -103,23 +125,40 @@ void main() async {
   print('Core services started successfully.');
 
   // Bind IPC socket
-  final socketFile = File(socketPath);
-  if (await socketFile.exists()) {
+  if (Platform.isWindows) {
+    // Windows Named Pipes do not exist on the file system, but we can make sure
+    // to check and handle socket binding cleanly.
     try {
-      await socketFile.delete();
+      ipcServer = await ServerSocket.bind(
+        InternetAddress(r'\\.\pipe\tetherd.pipe', type: InternetAddressType.pipe),
+        0,
+      );
+      print('IPC Named Pipe server listening on \\\\.\\pipe\\tetherd.pipe');
+      ipcServer!.listen(_handleIpcConnection);
     } catch (e) {
-      print('Failed to delete existing socket file: $e');
+      print('Fatal: Failed to bind IPC Named Pipe: $e');
+      await shutdown();
+      exit(1);
     }
-  }
+  } else {
+    final socketFile = File(socketPath);
+    if (await socketFile.exists()) {
+      try {
+        await socketFile.delete();
+      } catch (e) {
+        print('Failed to delete existing socket file: $e');
+      }
+    }
 
-  try {
-    ipcServer = await ServerSocket.bind(InternetAddress(socketPath, type: InternetAddressType.unix), 0);
-    print('IPC Unix Domain Socket server listening on $socketPath');
-    ipcServer!.listen(_handleIpcConnection);
-  } catch (e) {
-    print('Fatal: Failed to bind IPC socket: $e');
-    await shutdown();
-    exit(1);
+    try {
+      ipcServer = await ServerSocket.bind(InternetAddress(socketPath, type: InternetAddressType.unix), 0);
+      print('IPC Unix Domain Socket server listening on $socketPath');
+      ipcServer!.listen(_handleIpcConnection);
+    } catch (e) {
+      print('Fatal: Failed to bind IPC socket: $e');
+      await shutdown();
+      exit(1);
+    }
   }
 
   // Listen to connection manager state/peer updates to broadcast to GUI clients
@@ -133,7 +172,9 @@ void main() async {
 
   // Graceful shutdown signals
   ProcessSignal.sigint.watch().listen((_) => _handleSignal(ProcessSignal.sigint));
-  ProcessSignal.sigterm.watch().listen((_) => _handleSignal(ProcessSignal.sigterm));
+  if (!Platform.isWindows) {
+    ProcessSignal.sigterm.watch().listen((_) => _handleSignal(ProcessSignal.sigterm));
+  }
 }
 
 void _handleSignal(ProcessSignal signal) async {
@@ -160,12 +201,14 @@ Future<void> shutdown() async {
 
   // Delete socket and lock files
   try {
-    final socketFile = File(socketPath);
-    if (await socketFile.exists()) await socketFile.delete();
+    if (!Platform.isWindows) {
+      final socketFile = File(socketPath);
+      if (await socketFile.exists()) await socketFile.delete();
+    }
   } catch (_) {}
 
   try {
-    final lockFile = File(lockPath);
+    final lockFile = File(getLockPath());
     if (await lockFile.exists()) await lockFile.delete();
   } catch (_) {}
 
